@@ -1,0 +1,79 @@
+import h5py
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+def gultekin(x):
+    # values for alpha. beta, epsilon, taken from Gultekin+2009 (https://arxiv.org/pdf/0903.4897)
+    beta = 4.24
+    alpha = 8.12 - beta * np.log10(200)
+    epsilon = 0.44
+    y = alpha + beta * x
+    return y, y + epsilon, y - epsilon
+
+
+# -----------------------------------------------------
+input_filepath = ''  # place input file path here
+# -----------------------------------------------------
+
+# These lines load in the hdf file and call the 'Subhalo' header
+f = h5py.File(input_filepath, 'r')
+halos = f['Subhalo']
+
+# This will list out all the column headers given in 'Subhalo'
+print('Column Headers -- \n' + str(list(halos.keys())))
+
+# -----------------------------------------------------
+# This is an example of how to load in the data as numpy arrays; there is something like 50,000 entries,
+# so here I am plotting only the first 10 galaxies, you should try to find some galaxies that spread
+# across a few orders of magnitude
+h = 0.677
+v_sigmas = np.array(halos['SubhaloVelDisp'][0:10])
+bh_masses = np.array(halos['SubhaloBHMass'][0:10]) * 1e10 / h  # converting from simulation units to
+# physical units
+
+log_v_sigmas = np.log10(v_sigmas)
+log_bh_masses = np.log10(bh_masses)
+
+# These lines perform a linear regression on the first ten galaxies, and give the parameters a and b,
+# you can then compare these to the values (alpha and beta) from the literature
+b, a = np.polyfit(log_v_sigmas, log_bh_masses, deg=1)
+X = np.linspace(min(log_v_sigmas), max(log_v_sigmas))
+Y = a + b * X
+
+# -----------------------------------------------------
+# These lines plot the data in a neat and concise way, feel free to adjust the parameters and aesthetics
+plt.figure(figsize=(8, 6))
+plt.scatter(v_sigmas, bh_masses)
+plt.plot(10 ** X, 10 ** Y, linestyle='dashed', label='TNG50, first 10 galaxies')
+plt.xscale('log')
+plt.yscale('log')
+plt.xlabel(r'$\sigma$ $[km/s]$')
+plt.ylabel(r'$M_{BH}$ $[M_{\odot}]$')
+
+# These lines use the gultekin(x) function to compare with the TNG data
+ind = 10 ** X
+dep = 10 ** (gultekin(X)[0])
+upper_error = 10 ** (gultekin(X)[1])
+lower_error = 10 ** (gultekin(X)[2])
+plt.plot(ind, dep, linestyle='dashed', label='Gultekin+2009')
+plt.fill_between(x=ind, y1=upper_error, y2=lower_error, alpha=0.3)
+plt.legend(loc='lower right')
+
+# -----------------------------------------------------
+# If you run the script, you'll see that the best fit line for the first ten TNG galaxies has a larger
+# intercept, but a smaller slope; this would indicate that the simulated galaxies posses higher mass
+# supermassive blackholes for a given velocity dispersion than what we observe in the sky
+
+# This is an example of the M-sigma relation, a very important relationship in cosmology, and astrophysics
+# as a whole, you should try to plot some more galaxies from TNG50, as well as plotting other
+# relationships, such as the M-L relation (found in the same paper, Gultekin+2009,
+# https://arxiv.org/pdf/0903.4897), etc...
+
+# Let me know if you have any questions!
+# -Robin
+
+# plt.savefig(output_filepath/output.png, dpi=240), if you want to save the plot as a png
+plt.show()
+
+
