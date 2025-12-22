@@ -14,6 +14,59 @@ class Kinematics:
         self.parameter = parameter
         self.smoothing = smoothing
 
+    def accretionHistory(self):
+        font_prop = formatting()
+
+        if '09_18_lastgigyear' in self.output_path:
+            times = self.data['lookback_times']
+            x_lim = [0, 1.5]
+            x_label = 'Lookback Time ' + r'$[$' + 'Gyr' + r'$]$'
+        else:
+            times = self.data['redshifts']
+            x_lim = [0, 1.5]
+            x_label = 'z'
+
+        fig, ax = plt.subplots(figsize=(5, 5))
+        ax.plot(times, np.log10(self.data['M_halo']), label='halo mass',
+                linewidth=0.8, color='tab:blue')
+        ax.plot(times, np.log10(self.data['M_dm']), label='dm mass',
+                linewidth=0.8, color='tab:blue', linestyle='dashed', dashes=(6, 6))
+        ax.plot(times, np.log10(self.data['M_gas']), label='gas mass',
+                linewidth=0.8, color='tab:green')
+        ax.plot(times, np.log10(self.data['M_star']), label='stellar mass',
+                linewidth=0.8, color='tab:red')
+        ax.plot(times, np.log10(self.data['M_bh']), label='bh mass',
+                linewidth=0.8, color='k')
+
+        # Other formatting stuff
+        y_lim = [4, 12]
+        plt.xlim(x_lim[0], x_lim[1])
+        plt.ylim(y_lim[0], y_lim[1])
+
+        x_ticksMajor = np.arange(0, 13, 0.5)
+        x_ticksMinor = np.arange(0, 13, 0.1)
+        x_ticks = x_ticksMajor[(x_ticksMajor >= x_lim[0]) & (x_ticksMajor <= x_lim[1])]
+        plt.xticks(x_ticks, [str(x).replace("-", '-') for x in x_ticks], fontproperties=font_prop)
+        plt.xticks(x_ticksMinor[(x_ticksMinor >= x_lim[0]) & (x_ticksMinor <= x_lim[1])], minor=True)
+
+        y_ticksMajor = np.arange(0, 13, 1)
+        y_ticksMinor = np.arange(0, 13, 0.2)
+        y_ticks = y_ticksMajor[(y_ticksMajor >= y_lim[0]) & (y_ticksMajor <= y_lim[1])]
+        plt.yticks(y_ticks, [str(y).replace("-", '-') for y in y_ticks], fontproperties=font_prop)
+        plt.yticks(y_ticksMinor[(y_ticksMinor >= y_lim[0]) & (y_ticksMinor <= y_lim[1])], minor=True)
+
+        plt.gca().invert_xaxis()
+
+        # Set font weight for tick labels
+        ax.set_xlabel(x_label, fontproperties=font_prop)
+        ax.set_ylabel('log Mass ' + r'$[$' + 'log solar masses' + r'$]$', fontproperties=font_prop)
+
+        # plt.text(8, 5, s=r'halo 16; M $\sim$ 1.5e11', fontproperties=font_prop)
+
+        plt.legend(loc='lower left', prop=font_prop)
+        plt.savefig(self.output_path, dpi=240, bbox_inches='tight')
+        plt.show()
+
     def rotCurve(self):
         G = 4.300917270e-6 	# kpc / M_solar (km/s)2
         font_prop = formatting()
@@ -52,7 +105,6 @@ class Kinematics:
         plt.show()
 
     def orbits(self):
-        from hestia.geometry import get_lookbackTimes
         # -------------------------------
         dynamical_zeroTime = -1.517  # snap 118
         # -------------------------------
@@ -60,44 +112,70 @@ class Kinematics:
         plt.rcParams.update({'xtick.top': False})
 
         fig, ax = plt.subplots(figsize=(5, 5))
-        ax.plot(-1 * self.data['hestia_times'] - dynamical_zeroTime, self.data['hestia_distances'],
-                c='tab:blue', linestyle='solid', lw=1.5, label='hestia')
-        ax.plot(-1 * self.data['besla_times'] + 1.1, self.data['besla_distances'], label='Besla+2012, model 2',
-                c='tab:purple', linestyle='solid', lw=1, alpha=1)
+        ax.plot(-1 * self.data['hestia_times'], self.data['hestia_distances'],
+                c='tab:blue', linestyle='solid', lw=1.2, label='halo41-halo01 distance (HESTIA)')
+        # ax.plot(-1 * self.data['besla_times'] + 1.1, self.data['besla_distances'], label='Besla+2012, model 2',
+        #         c='tab:purple', linestyle='solid', lw=1, alpha=1)
         # ax.plot(-1 * self.data['pardy_times'], self.data['pardy_distances'], label='pardy+2018, 9:1',
         #         c='tab:green', linestyle='solid', alpha=0.5)
-        ax.plot(-1 * self.data['lucchini_times'], self.data['lucchini_distances'], label='Lucchini+2020',
-                c='tab:green', linestyle='solid', lw=1, alpha=1)
+        # ax.plot(-1 * self.data['lucchini_times'], self.data['lucchini_distances'], label='Lucchini+2020',
+        #         c='tab:green', linestyle='solid', lw=1, alpha=1)
+        lucchini = np.loadtxt('/Users/ursa/dear-prudence/scripts/local/literature/lmc-mw_lucchini21.txt')
+        ax.plot(lucchini[:, 0], lucchini[:, 1],
+                c='tab:green', linestyle='solid', lw=0.8, label='LMC-MW distance (Lucchini+2021)')
 
         # Other formatting stuff
-        x_lim = [-7, 2]
-        y_lim = [0, 200]
+        x_lim = [-2, 0]
+        y_lim = [0, 500]
         plt.xlim(x_lim[0], x_lim[1])
         plt.ylim(y_lim[0], y_lim[1])
 
-        plt.xticks(np.linspace(x_lim[0], x_lim[1], x_lim[1] - x_lim[0] + 1), fontproperties=font_prop)
-        plt.xticks(np.linspace(x_lim[0], x_lim[1], 5 * (x_lim[1] - x_lim[0]) + 1), minor=True)
-        plt.yticks(np.linspace(0, 200, 5), fontproperties=font_prop)
-        plt.yticks(np.linspace(0, 200, 21), minor=True)
-        # plt.gca().invert_xaxis()
+        x_ticksMajor = np.arange(-4, 0, 0.5)
+        x_ticksMinor = np.arange(-4, 0, 0.1)
+        x_ticks = x_ticksMajor[(x_ticksMajor >= x_lim[0]) & (x_ticksMajor <= x_lim[1])]
+        plt.xticks(x_ticks, [str(x).replace("-", '-') for x in x_ticks], fontproperties=font_prop)
+        plt.xticks(x_ticksMinor[(x_ticksMinor >= x_lim[0]) & (x_ticksMinor <= x_lim[1])], minor=True)
+
+        y_ticksMajor = np.arange(0, 800, 100)
+        y_ticksMinor = np.arange(0, 800, 20)
+        y_ticks = y_ticksMajor[(y_ticksMajor >= y_lim[0]) & (y_ticksMajor <= y_lim[1])]
+        plt.yticks(y_ticks, [str(y).replace("-", '-') for y in y_ticks], fontproperties=font_prop)
+        plt.yticks(y_ticksMinor[(y_ticksMinor >= y_lim[0]) & (y_ticksMinor <= y_lim[1])], minor=True)
+
         # Set font weight for tick labels
-        ax.set_xlabel('Dynamical Time ' + r'$[$' + 'Gyr' + r'$]$', fontproperties=font_prop)
+        ax.set_xlabel('Lookback Time ' + r'$[$' + 'Gyr' + r'$]$', fontproperties=font_prop)
         ax.set_ylabel('Distance ' + r'$[$' + 'kpc' + r'$]$', fontproperties=font_prop)
 
+        # halo_01 R_vir line
+        ax.plot([x_lim[0], x_lim[1]], [319, 319], linestyle='dashed', c='tab:blue', linewidth=0.8, dashes=(6, 6),
+                alpha=0.5)
+        ax.text(-1.1, 325, s=r'"MW" virial radius', c='tab:blue', fontproperties=font_prop)
+        # lucchini MW R_vir line
+        ax.plot([x_lim[0], x_lim[1]], [206, 206], linestyle='dashed', c='tab:green', linewidth=0.8, dashes=(6, 6),
+                alpha=0.5)
+        ax.text(-1.8, 215, s=r'"MW" virial radius', c='tab:green', fontproperties=font_prop)
+
+        ax.axvspan(-0.3, -0.1, color='tab:blue', linestyle='', alpha=0.2)
+        ax.plot([-0.3, -0.3], [y_lim[0], y_lim[1]],
+                 linestyle='dashed', color='k', dashes=(6, 6), lw=0.5, alpha=0.8)
+        ax.plot([-0.1, -0.1], [y_lim[0], y_lim[1]],
+                 linestyle='dashed', color='k', dashes=(6, 6), lw=0.5, alpha=0.8)
+        ax.text(-0.4, 330, s='sampled time span', c='tab:blue', rotation='vertical', font_properties=font_prop)
+
         # --- Top x-axis ---
-        redshifts = np.array(np.linspace(0, 1, 11))
-        _, lookback_times = get_lookbackTimes(run=None, snaps=None, redshifts=redshifts)
-        ax_top = ax.secondary_xaxis('top')  # share the same x-axis scale
-        ax_top.set_xlabel('z', fontproperties=font_prop)
-        ax_top.set_xticks(-1 * np.array(lookback_times) + 1.33)
-        ax_top.set_xticklabels(['0', '0.1', '', '', '', '0.5', '', '', '', '', '1.0'],
-                               fontproperties=font_prop)
+        # redshifts = np.array(np.linspace(0, 1, 11))
+        # _, lookback_times = get_lookbackTimes(run=None, snaps=None, redshifts=redshifts)
+        # ax_top = ax.secondary_xaxis('top')  # share the same x-axis scale
+        # ax_top.set_xlabel('z', fontproperties=font_prop)
+        # ax_top.set_xticks(-1 * np.array(lookback_times) + 1.33)
+        # ax_top.set_xticklabels(['0', '0.1', '', '', '', '0.5', '', '', '', '', '1.0'],
+        #                        fontproperties=font_prop)
 
         # Virial radius line
-        plt.plot([0, 0], [y_lim[0], y_lim[1]], linestyle='dashed', color='black',
-                 dashes=(6, 6), lw=0.5, alpha=0.8)
-        plt.text(0.1, 80, s='zero dynamical time', rotation='vertical', color='black',
-                 fontproperties=font_prop)
+        # plt.plot([0, 0], [y_lim[0], y_lim[1]], linestyle='dashed', color='black',
+        #          dashes=(6, 6), lw=0.5, alpha=0.8)
+        # plt.text(0.1, 80, s='zero dynamical time', rotation='vertical', color='black',
+        #          fontproperties=font_prop)
 
         # plt.grid(True, alpha=0.25, color='k', linestyle='dashed', lw=0.5)
         plt.legend(prop=font_prop)
@@ -232,10 +310,10 @@ class Kinematics:
 
             elif self.parameter == 'velocity':
                 ax.set_ylabel(r'|v|  $[$km/s$]$', fontproperties=font_prop)
-                ax.set_ylim([0, 60])
-                ax.set_yticks([0, 10, 20, 30, 40, 50, 60], labels=['', '10', '20', '30', '40', '50', '60'],
-                              fontproperties=font_prop)
-                ax.set_yticks(np.arange(0, 60, 2), minor=True)
+                ax.set_ylim([-40, 40])
+                # ax.set_yticks([0, 10, 20, 30, 40, 50, 60], labels=['', '10', '20', '30', '40', '50', '60'],
+                #               fontproperties=font_prop)
+                # ax.set_yticks(np.arange(0, 60, 2), minor=True)
 
                 if not self.smoothing:
                     print(self.data['lookback_times'] - t_dyn0)
@@ -264,7 +342,83 @@ class Kinematics:
             # sloshing is primarily in the x-y plane (for halo_08)
             fig, ax = plt.subplots(figsize=(8, 7))
 
-            if self.smoothing:
+            if self.parameter == 'norm':
+                if self.smoothing:
+                    if 'halo_08' in self.output_path:  # if this the LMC-SMC system from chisholm+2025
+                        n, t_dyn0 = 1, 1.517  # zero dynamical time, snap 119
+                        cbar_label = r'dynamical time $[$Gyr$]$'
+                    else:
+                        n, t_dyn0 = 0, 0
+                        cbar_label = r'lookback time $[$Gyr$]$'
+                    fx = interp1d(-1 ** n * self.data['lookback_times'] - t_dyn0,
+                                  self.data['bh_coords'][:, 0], kind=kind_interpolator,
+                                  fill_value=np.array([0.]), bounds_error=False)
+                    fy = interp1d(-1 ** n * self.data['lookback_times'] - t_dyn0,
+                                  self.data['bh_coords'][:, 1], kind=kind_interpolator,
+                                  fill_value=np.array([0.]), bounds_error=False)
+                    # t_smooth = np.linspace(min(-1 ** n * self.data['lookback_times'] - t_dyn0),
+                    #                        max(-1 ** n * self.data['lookback_times'] - t_dyn0), 9999)
+                    t_smooth = np.linspace(min(-1 ** n * self.data['lookback_times'] - t_dyn0),0, 9999)
+                    x_smooth, y_smooth = fx(t_smooth), fy(t_smooth)
+
+                    # Create line segments [(x0, y0), (x1, y1)], ...
+                    points = np.array([x_smooth, y_smooth]).T.reshape(-1, 1, 2)
+                    segments = np.concatenate([points[:-1], points[1:]], axis=1)
+
+                    # Create the LineCollection
+                    norm = plt.Normalize(t_smooth.min(), t_smooth.max())
+                    lc = LineCollection(segments, cmap='Spectral', norm=norm, lw=0.8)
+                    ax.add_collection(lc)
+                    lc.set_array(t_smooth)  # THIS is the missing step
+
+                    ax.add_collection(lc)
+                    # cbar = plt.colorbar(lc, ax=ax)
+                    cbar_ax = fig.add_axes([0.87, 0.11, 0.03, 0.77])  # [left, bottom, width, height] in figure coords
+                    cbar = fig.colorbar(lc, cax=cbar_ax, orientation='vertical')
+                    # plt.text(1.8, -1.8, s='SMC pericenters at +0.05 Gyr and +0.95 Gyr', rotation='vertical',
+                    #          fontproperties=font_prop)
+                    cbar.set_label(cbar_label, fontproperties=font_prop)
+
+                    cbar.set_ticks([-1.5, -1.0, -0.5, 0.0])
+                    cbar.set_ticks(np.linspace(-1.5, 0.0, 16), minor=True)
+                    cbar.set_ticklabels(['1.5', '1.0', '0.5', '0.0'], fontproperties=font_prop)
+
+                else:
+                    ax.scatter(self.data['bh_coords'][:, 0], self.data['bh_coords'][:, 1],
+                               s=10, c='k', alpha=0.8)
+
+                x_lim = [-4, 4]
+                y_lim = [-4, 4]
+                x_ticks = np.array([-4, -3, -2, -1, 0.0, 1, 2, 3, 4])
+                x_labels = np.array(['-4.0', '-3.0', '-2.0', '-1.0', '0.0', '1.0', '2.0', '3.0', '4.0'])
+                y_ticks = np.array([-4, -3, -2, -1, 0.0, 1, 2, 3, 4])
+                y_labels = np.array(['-4.0', '-3.0', '-2.0', '-1.0', '0.0', '1.0', '2.0', '3.0', '4.0'])
+
+                # plt.rcParams.update({'xtick.labeltop': True, 'ytick.labelright': True})
+
+                ax.set_xlim(x_lim)
+                mask = (x_ticks >= x_lim[0]) & (x_ticks <= x_lim[1])
+                ax.set_xticks(x_ticks[mask], labels=x_labels[mask], fontproperties=font_prop)
+                ax.set_xticks(np.arange(x_lim[0], x_lim[1], 0.1), minor=True)
+                ax.set_xlabel(r'x-coordinate $[$kpc$]$', fontproperties=font_prop)
+
+                ax.set_ylim(y_lim)
+                mask = (y_ticks >= y_lim[0]) & (y_ticks <= y_lim[1])
+                ax.set_yticks(y_ticks[mask], labels=y_labels[mask], fontproperties=font_prop)
+                ax.set_yticks(np.arange(y_lim[0], y_lim[1], 0.1), minor=True)
+                ax.set_ylabel(r'y-coordinate $[$kpc$]$', fontproperties=font_prop)
+                ax.set_aspect('equal')
+
+                plt.rcParams.update({'lines.dashed_pattern': (6, 6)})
+                ax.errorbar(0, -1, xerr=0.186 / 2, lw=0.8, capsize=2, color='k', alpha=0.8)
+                ax.text(-0.2, -1.15, s=r'$\sim\epsilon_{\text{bh}}$ ', rotation='horizontal', color='black',
+                        fontproperties=font_prop)
+                ax.annotate("", xytext=(-0.44, -1.5), xy=(0.44, -1.5),
+                            arrowprops=dict(arrowstyle="<->", linestyle='dashed', lw=0.5, alpha=0.8))
+                ax.text(-0.4, -1.65, s=r'$\sim$1$^{\circ}$ in LMC', rotation='horizontal', color='black',
+                        fontproperties=font_prop)
+
+            elif self.parameter == 'L':
                 if 'halo_08' in self.output_path:  # if this the LMC-SMC system from chisholm+2025
                     n, t_dyn0 = 1, 1.517  # zero dynamical time, snap 119
                     cbar_label = r'dynamical time $[$Gyr$]$'
@@ -272,14 +426,14 @@ class Kinematics:
                     n, t_dyn0 = 0, 0
                     cbar_label = r'lookback time $[$Gyr$]$'
                 fx = interp1d(-1 ** n * self.data['lookback_times'] - t_dyn0,
-                              self.data['bh_coords'][:, 0], kind=kind_interpolator,
+                              np.sqrt(self.data['bh_energies']), kind=kind_interpolator,
                               fill_value=np.array([0.]), bounds_error=False)
                 fy = interp1d(-1 ** n * self.data['lookback_times'] - t_dyn0,
-                              self.data['bh_coords'][:, 1], kind=kind_interpolator,
+                              self.data['bh_L'], kind=kind_interpolator,
                               fill_value=np.array([0.]), bounds_error=False)
                 # t_smooth = np.linspace(min(-1 ** n * self.data['lookback_times'] - t_dyn0),
                 #                        max(-1 ** n * self.data['lookback_times'] - t_dyn0), 9999)
-                t_smooth = np.linspace(min(-1 ** n * self.data['lookback_times'] - t_dyn0),0, 9999)
+                t_smooth = np.linspace(min(-1 ** n * self.data['lookback_times'] - t_dyn0), 0, 9999)
                 x_smooth, y_smooth = fx(t_smooth), fy(t_smooth)
 
                 # Create line segments [(x0, y0), (x1, y1)], ...
@@ -291,6 +445,12 @@ class Kinematics:
                 lc = LineCollection(segments, cmap='Spectral', norm=norm, lw=0.8)
                 ax.add_collection(lc)
                 lc.set_array(t_smooth)  # THIS is the missing step
+                print(self.data['bh_L'].min())
+                print(self.data['bh_L'].max())
+                x_lim = [70, 90]
+                y_lim = [-100, 200]
+                plt.xlim(x_lim)
+                plt.ylim(y_lim)
 
                 ax.add_collection(lc)
                 # cbar = plt.colorbar(lc, ax=ax)
@@ -304,45 +464,16 @@ class Kinematics:
                 cbar.set_ticks(np.linspace(-1.5, 0.0, 16), minor=True)
                 cbar.set_ticklabels(['1.5', '1.0', '0.5', '0.0'], fontproperties=font_prop)
 
-            else:
-                ax.scatter(self.data['bh_coords'][:, 0], self.data['bh_coords'][:, 1],
-                           s=10, c='k', alpha=0.8)
-
-            x_lim = [-2, 2]
-            y_lim = [-2, 2]
-            x_ticks = np.array([-2.0, -1.5, -1, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0])
-            x_labels = np.array(['-2.0', '-1.5', '-1.0', '-0.5', '0.0', '0.5', '1.0', '1.5', '2.0'])
-            y_ticks = np.array([-2.0, -1.5, -1, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0])
-            y_labels = np.array(['-2.0', '-1.5', '-1.0', '-0.5', '0.0', '0.5', '1.0', '1.5', '2.0'])
-            # plt.rcParams.update({'xtick.labeltop': True, 'ytick.labelright': True})
-
-            ax.set_xlim(x_lim)
-            mask = (x_ticks >= x_lim[0]) & (x_ticks <= x_lim[1])
-            ax.set_xticks(x_ticks[mask], labels=x_labels[mask], fontproperties=font_prop)
-            ax.set_xticks(np.arange(x_lim[0], x_lim[1], 0.1), minor=True)
-            ax.set_xlabel(r'x-coordinate $[$kpc$]$', fontproperties=font_prop)
-
-            ax.set_ylim(y_lim)
-            mask = (y_ticks >= y_lim[0]) & (y_ticks <= y_lim[1])
-            ax.set_yticks(y_ticks[mask], labels=y_labels[mask], fontproperties=font_prop)
-            ax.set_yticks(np.arange(y_lim[0], y_lim[1], 0.1), minor=True)
-            ax.set_ylabel(r'y-coordinate $[$kpc$]$', fontproperties=font_prop)
-            ax.set_aspect('equal')
-
-            plt.rcParams.update({'lines.dashed_pattern': (6, 6)})
-            ax.errorbar(0, -1, xerr=0.186 / 2, lw=0.8, capsize=2, color='k', alpha=0.8)
-            ax.text(-0.2, -1.15, s=r'$\sim\epsilon_{\text{bh}}$ ', rotation='horizontal', color='black',
-                    fontproperties=font_prop)
-            ax.annotate("", xytext=(-0.44, -1.5), xy=(0.44, -1.5),
-                        arrowprops=dict(arrowstyle="<->", linestyle='dashed', lw=0.5, alpha=0.8))
-            ax.text(-0.4, -1.65, s=r'$\sim$1$^{\circ}$ in LMC', rotation='horizontal', color='black',
-                    fontproperties=font_prop)
+            # x_ticks = np.array([-2.0, -1.5, -1, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0])
+            # x_labels = np.array(['-2.0', '-1.5', '-1.0', '-0.5', '0.0', '0.5', '1.0', '1.5', '2.0'])
+            # y_ticks = np.array([-2.0, -1.5, -1, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0])
+            # y_labels = np.array(['-2.0', '-1.5', '-1.0', '-0.5', '0.0', '0.5', '1.0', '1.5', '2.0'])
 
         elif self.projection == '3-dim':
             from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
-            x_lim = [-2.5, 2.5]
-            y_lim = [-2.5, 2.5]
+            x_lim = [-3.5, 3.5]
+            y_lim = [-3.5, 3.5]
             z_lim = [-1.0, 1.0]
 
             fx = interp1d(-1 * self.data['lookback_times'] - t_dyn0,
@@ -707,72 +838,104 @@ class Observables:
     def bhPDF(self):
         from scripts.hestia.astrometry import Measurements
         f_PDF = self.data['f_PDF'].T
+        bar = self.data['bar']
         lon_e = self.data['lon_edges']
         lat_e = self.data['lat_edges']
-        center_gas = self.data['center_gas']
-        center_stars = self.data['center_stars']
         center_bh = self.data['center_bh']
         font_prop = formatting()
 
-        print(f'(ra, dec, los)_gas : \t{round(center_gas[0, 2], 3)} deg, {round(center_gas[0, 1], 3)} deg, '
-              f'{round(center_gas[0, 0], 3)} kpc\n'
-              f'(ra, dec, los)_stars : \t{round(center_stars[0, 2], 3)} deg, {round(center_stars[0, 1], 3)} deg, '
-              f'{round(center_stars[0, 0], 3)} kpc\n'
-              f'(ra, dec, los)_bh : \t{round(center_bh[2], 3)} deg, {round(center_bh[1], 3)} deg, '
+        print(f'(ra, dec, los)_bh : \t{round(center_bh[2], 3)} deg, {round(center_bh[1], 3)} deg, '
               f'{round(center_bh[0], 3)} kpc')
 
-        fig = plt.figure(figsize=(7, 7))
+        fig = plt.figure(figsize=(6, 6))
         plt.xlim([lon_e[0], lon_e[-1]])
         plt.ylim([lat_e[0], lat_e[-1]])
-        c = plt.imshow(f_PDF.T, origin='lower', cmap='bone_r',
+        c = plt.imshow(f_PDF.T, origin='lower', cmap='cubehelix_r',
                        extent=(lon_e[0], lon_e[-1], lat_e[0], lat_e[-1]),
+                       # norm=LogNorm(vmin=f_PDF.min(), vmax=f_PDF.max()))
                        vmin=f_PDF.min(), vmax=f_PDF.max())
         plt.gca().invert_xaxis()
 
         m = Measurements()
         # softening length of gas (dependent on cell, but roughly) ~ 186 pc --> 0.214 degrees
-        plt.errorbar(center_bh[2], center_bh[1], xerr=0.214, yerr=0.214, c='k', elinewidth=0.8, capsize=2,
-                     label='HESTIA : current position of bh')
-        plt.errorbar(center_gas[0, 2], center_gas[0, 1], xerr=0.214, yerr=0.214, c='tab:blue', elinewidth=0.8, capsize=2,
-                     label='HESTIA : center of cool gas' + r' (r $<$ 5 kpc, T $<$ 1e5 K)')
-        plt.errorbar(center_stars[0, 2], center_stars[0, 1], xerr=0.214, yerr=0.214, c='tab:cyan',
-                     elinewidth=0.8, capsize=2, label='HESTIA : center of stellar disk' + r' (r $<$ 5 kpc)')
+        # plt.errorbar(center_bh[2], center_bh[1], xerr=0.214, yerr=0.214, c='k', elinewidth=0.8, capsize=2,
+        #              label='HESTIA : current position of bh')
+        # plt.errorbar(center_gas[0, 2], center_gas[0, 1], xerr=0.214, yerr=0.214, c='tab:blue', elinewidth=0.8, capsize=2,
+        #              label='HESTIA : center of cool gas' + r' (r $<$ 5 kpc, T $<$ 1e5 K)')
+        # plt.errorbar(center_stars[0, 2], center_stars[0, 1], xerr=0.214, yerr=0.214, c='tab:cyan',
+        #              elinewidth=0.8, capsize=2, label='HESTIA : center of stellar disk' + r' (r $<$ 5 kpc)')
 
+        plt.rcParams.update({'lines.dashed_pattern': (6, 6)})
         from matplotlib.patches import Ellipse
         ax = plt.gca()
-        # quoted from https://iopscience.iop.org/article/10.1086/306030/pdf, no uncertainties given
-        ellipse = Ellipse(xy=(79.25,  -69.03), width=2 * 0.2, height=2 * 0.2,
-                          edgecolor='tab:green', fc='none', lw=0.8, alpha=0.5, hatch='\\', label='HI center (Kim+1998)')
-        ax.add_patch(ellipse)
-        ellipse = Ellipse(xy=(m['stars/LMC/ra'],  m['stars/LMC/dec']),
-                          width=2 * m['stars/LMC/sigma_ra'], height=2 * m['stars/LMC/sigma_dec'],
-                          edgecolor='tab:green', fc='none', lw=0.8, alpha=0.5, hatch='/',
-                          label='PM center (vanDerMarel+2014), Note: by def aligned to mbp')
-        ax.add_patch(ellipse)
-        # quoted from Lucchini+2025, https://arxiv.org/abs/2510.03393
-        # plt.errorbar(80.72, -67.79, xerr=0.44 * 2, yerr=0.80 *2 , c='tab:green', elinewidth=0.8, capsize=2)
-        ellipse = Ellipse(xy=(80.72,  -67.79), width=2 * 2 * 0.44, height=2 * 2 * 0.80,
-                          edgecolor='tab:green', fc='none', lw=0.8, alpha=0.4, hatch='x',
-                          label='LMC dynamical center from HVSs (Lucchini+2025)')
-        ax.add_patch(ellipse)
+        # ellipse = Ellipse(xy=(m['LMC/HI/ra'],  m['LMC/HI/dec']),
+        #                   width=2 * m['LMC/HI/sigma_ra'], height=2 * m['LMC/HI/sigma_dec'],
+        #                   edgecolor='tab:blue', fc='none', lw=0.8, alpha=0.5, hatch='x', label='HI center (Kim+1998)')
+        # ax.add_patch(ellipse)
+        plt.scatter(m['LMC/HI/ra'],  m['LMC/HI/dec'], c='tab:blue', marker='x', linewidths=0.8, s=64,
+                    label='HI kinematical center (Kim+1998)')
+        # ellipse = Ellipse(xy=(m['LMC/pm/ra'],  m['LMC/pm/dec']),
+        #                   width=2 * 0.02, height=2 * 0.02,
+        #                    edgecolor='tab:purple', fc='none', lw=0.8, alpha=0.5, hatch='x',
+        #                   label='Stellar kinematic center (Choi+2022)')
+        # ax.add_patch(ellipse)
+        plt.scatter(m['LMC/pm/ra'],  m['LMC/pm/dec'], c='tab:purple', marker='x', linewidths=0.8, s=64,
+                    label='Stellar kinematical center (Choi+2022)')
 
-        plt.ylabel('declination (deg)', fontproperties=font_prop)
-        plt.yticks(np.linspace(-67.5, -71, 8),
-                   labels=['-67.5', '-68.0', '-68.5', '-69.0', '-69.5', '-70.0', '-70.5', '-71.0'],
-                   fontproperties=font_prop)
-        plt.yticks(np.linspace(-67.5, -71.0, 36), minor=True)
+        ellipse = Ellipse(xy=(m['LMC/bar/ra'],  m['LMC/bar/dec']),
+                          width=2 * 2 * np.degrees(np.arctan(m['LMC/bar/R_bar'] / m['LMC/bar/distance'])
+                                                   / 2),
+                          height=2 * 2 * np.degrees(np.arctan(m['LMC/bar/R_bar'] * m['LMC/bar/axisRatio']
+                                                              / (2 * m['LMC/bar/distance']) * np.cos(m['LMC/bar/inclination']))),
+                          angle=180 - (90 + m['LMC/bar/nodes']),
+                          edgecolor='tab:red', fc='none', lw=0.8, alpha=0.5, linestyle='dashed')
+                          # label='Extent of bar from RCSs; center aligned to mbp by def (Rathore+2025)')
+        # ax.add_patch(ellipse)
+        plt.plot(np.degrees(bar[1]), np.degrees(bar[2]), c='tab:red', lw=0.8, alpha=0.5, linestyle='dashed')
+        print(bar)
+        plt.scatter(m['LMC/bar/ra'],  m['LMC/bar/dec'], c='tab:red', marker='x', linewidths=0.8, s=64,
+                    label='Stellar dynamical center (Rathore+2025)')
+
+        # plt.scatter(m['LMC/photometric/ra'],  m['LMC/photometric/dec'], c='tab:pink', marker='x', linewidths=0.8, s=64,
+        #             label='photometric center (vanDerMarel+2001)')
+
+        plt.errorbar(m['LMC/HVSs/ra'], m['LMC/HVSs/dec'],
+                     xerr=m['LMC/HVSs/sigma_ra'], yerr=m['LMC/HVSs/sigma_dec'],
+                     c='tab:green', elinewidth=0.8, capsize=2, label='LMC dynamical center from HVSs (Lucchini+2025)')
+        # ellipse = Ellipse(xy=(m['LMC/HVSs/ra'], m['LMC/HVSs/dec']),
+        #                   width=2 * m['LMC/HVSs/sigma_ra'], height=2 * m['LMC/HVSs/sigma_dec'],
+        #                   edgecolor='tab:green', fc='none', lw=0.8, alpha=0.4, hatch='x',
+        #                   label='LMC dynamical center from HVSs (Lucchini+2025)')
+        # ax.add_patch(ellipse)
+
         plt.xlabel('right ascension (deg)', fontproperties=font_prop)
-        plt.xticks(np.linspace(77.0, 80.5, 8),
-                   labels=['77.0', '77.5', '78.0', '78.5', '79.0', '79.5', '80.0', '80.5'],
-                   fontproperties=font_prop)
-        plt.xticks(np.linspace(77.0, 80.5, 36), minor=True)
+        plt.ylabel('declination (deg)', fontproperties=font_prop)
 
+        x_ticksMajor = np.arange(70, 90, 1)
+        x_ticksMinor = np.arange(70, 90, 0.2)
+        x_lim = [73.5, 87.5]
+        plt.xlim(x_lim[1], x_lim[0])
+        x_ticks = x_ticksMajor[(x_ticksMajor >= x_lim[0]) & (x_ticksMajor <= x_lim[1])]
+        plt.xticks(x_ticks, [f'{x:.1f}' if float(x) % 2 == 0 else '' for x in x_ticks],
+                   fontproperties=font_prop)
+        plt.xticks(x_ticksMinor[(x_ticksMinor >= x_lim[0]) & (x_ticksMinor <= x_lim[1])], minor=True)
+
+        y_ticksMajor = np.arange(-75, -65, 0.5)
+        y_ticksMinor = np.arange(-75, -65, 0.1)
+        y_lim = [-74, -67]
+        plt.ylim(y_lim)
+        y_ticks = y_ticksMajor[(y_ticksMajor >= y_lim[0]) & (y_ticksMajor <= y_lim[1])]
+        plt.yticks(y_ticks, [str(y).replace("-", '-') if float(y).is_integer() else '' for y in y_ticks],
+                   fontproperties=font_prop)
+        plt.yticks(y_ticksMinor[(y_ticksMinor >= y_lim[0]) & (y_ticksMinor <= y_lim[1])], minor=True)
+
+        ax.set_aspect(abs(x_lim[1] - x_lim[0]) / abs(y_lim[1] - y_lim[0]) )
         plt.legend(prop=font_prop, loc='lower left')
 
         # Colorbar
         cbar_ax = fig.add_axes([0.13, 0.92, 0.77, 0.03])  # [left, bottom, width, height] in figure coords
         cbar = fig.colorbar(c, cax=cbar_ax, orientation='horizontal')
-        cbar.set_ticks([f_PDF.min(), f_PDF.min() + 2e-6, f_PDF.max() - 2e-6, f_PDF.max()])
+        cbar.set_ticks([f_PDF.min(), 5e-7, 5e-6, f_PDF.max()])
         cbar.set_ticklabels(['', '1x probability', '10x probability', ''], fontproperties=font_prop)
 
         plt.savefig(self.output_path, dpi=240, bbox_inches='tight')
@@ -801,6 +964,7 @@ class Observables:
             # Plot
             c = ax.pcolormesh(Phi_edges, R_edges, stars_map, shading='auto', cmap=cmap,
                               vmin=5, vmax=17)
+            ax.scatter(np.radians(r_smc[0]), np.radians(90 + r_smc[1]), s=25, marker='D', c='k')
 
             # Aesthetics
             ax.set_theta_zero_location("E")  # 0° longitude at right
@@ -879,6 +1043,7 @@ def dispatch_plot(plot_class, plot_type, input_path, output_path, parameter=None
     if plot_class == 'kinematics':
         kinematics_plots = Kinematics(data, projection, parameter, smoothing, dark_mode, output_path)
         dispatcher = {
+            'history': kinematics_plots.accretionHistory,
             'rotCurve': kinematics_plots.rotCurve,
             'orbits': kinematics_plots.orbits,
             'bhSloshing': kinematics_plots.bhSloshing,

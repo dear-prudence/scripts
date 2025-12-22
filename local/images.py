@@ -309,7 +309,7 @@ param_settings = {'gas': {
     'E_diss': {'c_map': 'inferno', 'log': True, 'v_min': 1e-2, 'v_max': 1e2,
                'c_label': None, 'bar_label': 'E_dissipation'}
 },
-    'stars': {'massDen': {'c_map': 'magma', 'log': True, 'v_min': 1e7, 'v_max': 1e9,
+    'stars': {'massDen': {'c_map': 'viridis', 'log': True, 'v_min': 1e6, 'v_max': 1e8,
                           'c_label': 'white', 'bar_label': r'$\Sigma[$ ' + 'M' + r'$_{\odot}$' + '/kpc' + r'$^2]$'},
               'surfaceBrightness': {'c_map': 'bone_r', 'log': False, 'v_min': -16, 'v_max': -13,
                                     'c_label': 'white', 'bar_label': r'$\Sigma[$ ' + 'mag/kpc' + r'$^2]$'},

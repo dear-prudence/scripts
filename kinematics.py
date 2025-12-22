@@ -1,12 +1,13 @@
 import numpy as np
 import argparse
 from pathlib import Path
+import os
 
 
 def rotCurve(run, halo, snap):
     from hestia.halos import get_massProfile
 
-    base_path = f'/halos/{run}/{halo}/kinematics/rotCurve/'
+    output_path = f'/halos/{run}/{halo}/kinematics/rotCurve/'
     output_fileName = f'{run}.{halo}.rotCurve.snap{snap}.npz'
 
     profile = get_massProfile(run, halo, snap, verbose=True).T
@@ -15,27 +16,97 @@ def rotCurve(run, halo, snap):
 
     output_dict = {'r': profile[:, 0], 'M_tot': profile[:, 1],
                    'M_dm': profile[:, 4], 'M_gas': profile[:, 2], 'M_star': profile[:, 3]}
-    np.savez(f'/z/rschisholm{base_path}{output_fileName}', **output_dict)
-    return f'{base_path}{output_fileName}'
+    np.savez(f'/z/rschisholm{output_path}{output_fileName}', **output_dict)
+    return f'{output_path}{output_fileName}'
 
 
-def orbits(run, auxiliary_halo, halo):
+def accretionHistory(run, halo, verbose=False):
+    from hestia.halos import halo_dictionary
+    from hestia.particles import retrieve_particles
+    from hestia.geometry import get_redshift, get_lookbackTimes, calc_distanceDisk
+    h = 0.677
+
+    output_path = f'/halos/{run}/{halo}/kinematics/history/'
+    output_fileName = f'{run}.{halo}.accretionHistory.npz'
+
+    halo_id_z0 = halo_dictionary(run, halo)
+
+    if run != '09_18_lastgigyear':
+        ahf_filePath = (f'/store/clues/HESTIA/RE_SIMS/8192/GAL_FOR/{run}/AHF_output_2x2.5Mpc/'
+                        f'HESTIA_100Mpc_8192_{run}.127_halo_{halo_id_z0}.dat')
+        idx_i, idx_f = 67, 127
+    else:
+        ahf_filePath = f'/z/rschisholm/halos/{run}/{halo}/HESTIA_100Mpc_8192_{run}.127_halo_{halo_id_z0}.dat'
+        idx_i, idx_f = 118, 307
+
+    ahfHalo = np.loadtxt(ahf_filePath)
+
+    for snap in range(idx_f, idx_i, -1):
+        redshift = get_redshift(run, snap)
+        row = idx_f - snap
+
+        bh = retrieve_particles(run, halo, snap, 'PartType5', verbose=verbose)
+        if len(bh['ParticleIDs']) != 0:
+            bh['Distances'] = calc_distanceDisk(bh)
+            dist_mask = bh['Distances'] < 10  # kpc
+            bh = {key: val[dist_mask] for key, val in bh.items()}
+            verbose and print(f'\rretrieved central bh of {halo}, M ~ {(1e10 * bh["Masses"].item()):.2e};')
+        else:
+            verbose and print('\rNo central blackhole at this snapshot !')
+            bh['Masses'] = np.ones(1)  # arbitrarily low value
+
+        mass = np.array([
+            redshift,
+            float(ahfHalo[row, 4] / h),  # M_total (M_vir)
+            float(ahfHalo[row, 4] / h - ahfHalo[row, 45] / h - ahfHalo[row, 65] / h - bh['Masses']),  # M_dm
+            float(ahfHalo[row, 45] / h),  # M_gas
+            float(ahfHalo[row, 65] / h),  # M_star
+            float(bh['Masses'])  # M_bh
+        ])
+
+        verbose and print(f'\tmass_vector at z ~ {redshift} : {mass[1:]} M_solar')
+
+        if snap == idx_f:
+            massHistory = mass[np.newaxis, :]
+        else:
+            massHistory = np.vstack((massHistory, mass))
+
+    output_dict = {'redshifts': massHistory[:, 0],
+                   'lookback_times': get_lookbackTimes('', '', redshifts=massHistory[:, 0])[1],
+                   'M_halo': massHistory[:, 1], 'M_dm': massHistory[:, 2], 'M_gas': massHistory[:, 3],
+                   'M_star': massHistory[:, 4], 'M_bh': massHistory[:, 5]}
+
+    try:
+        os.mkdir(f'/z/rschisholm{output_path}')
+        print('\toutput directory written')
+    except FileExistsError:
+        pass
+
+    np.savez(f'/z/rschisholm{output_path}{output_fileName}', **output_dict)
+    return f'{output_path}{output_fileName}'
+
+
+def orbits(run, halo):
     from hestia.geometry import get_lookbackTimes, calc_distanceHalo
     from scipy.interpolate import interp1d
 
-    snaps = [67, 127]
-    base_path = '/halos/' + run + '/' + halo + '/kinematics/orbits/'
+    snaps = [107, 127]
+    output_path = f'/halos/{run}/{halo}/kinematics/orbits/'
 
-    lookback_times = np.array(get_lookbackTimes(run, snaps)[1])
-    distances = calc_distanceHalo(run, snaps, auxiliary_halo, halo)
+    auxHalo_dict = {'halo_08': 'smc',
+                    'halo_41': 'halo_01'}
+
+    _, lookback_times = get_lookbackTimes(run, range(snaps[1], snaps[0], -1))
+    distances = calc_distanceHalo(run, snaps, auxHalo_dict[halo], halo)
+    print(f'\t\tauxiliary halo : {auxHalo_dict[halo]}')
 
     kind_interpolator = 'cubic'  # or 'linear', 'quadratic', 'cubic'
 
-    if halo == 'halo_08' and auxiliary_halo == 'smc':
+    if halo == 'halo_08' and auxHalo_dict[halo] == 'smc':
         try:
-            besla_orbits = np.loadtxt('/z/rschisholm' + base_path + 'orbits_besla12_model2.txt')
-            pardy_orbits = np.loadtxt('/z/rschisholm' + base_path + 'orbits_pardy18_9to1.txt')
-            lucchini_orbits = np.loadtxt('/z/rschisholm' + base_path + 'orbits_lucchini20.txt')
+            besla_orbits = np.loadtxt('/z/rschisholm' + output_path + 'orbits_besla12_model2.txt')
+            pardy_orbits = np.loadtxt('/z/rschisholm' + output_path + 'orbits_pardy18_9to1.txt')
+            lucchini_orbits = np.loadtxt('/z/rschisholm' + output_path + 'orbits_lucchini20.txt')
         except FileNotFoundError or OSError:
             print('Warning: No orbit files found to compare to! Is this intentional?')
 
@@ -78,17 +149,23 @@ def orbits(run, auxiliary_halo, halo):
 
     else:
         # Create interpolator -- hestia
+        print(f'len(lookback_times) : {len(lookback_times)}')
+        print(f'len(distances) : {len(distances)}')
         h_interp = interp1d(lookback_times, distances, kind=kind_interpolator)  # or 'linear', 'quadratic', 'cubic'
         # Generate a smooth time grid
         h_time_smooth = np.linspace(min(lookback_times), max(lookback_times), 500)
         h_distance_smooth = h_interp(h_time_smooth)
         output_dict = {'hestia_times': h_time_smooth, 'hestia_distances': h_distance_smooth}
 
-    output_fileName = f'orbitalDistance_{run}_{halo}-{auxiliary_halo}.npz'
+    output_base = '/z/rschisholm'
+    output_name = f'orbitalDistance.{run}.{halo}-{auxHalo_dict[halo]}.npz'
 
-    np.savez(f'/z/rschisholm{base_path}{output_fileName}', **output_dict)
+    if not os.path.exists(output_base + output_path):
+        os.makedirs(output_base + output_path)
+        print('\toutput directory written')
 
-    return base_path + output_fileName
+    np.savez(f'/z/rschisholm{output_path}{output_name}', **output_dict)
+    return output_path + output_name
 
 
 # noinspection SpellCheckingInspection
@@ -117,14 +194,19 @@ def bhSloshing(run, halo, snaps, verbose=True):
 
             halo_params = get_halo_params(run, halo, snap)
             R_vir, E_pot, c = (halo_params['R_vir'] / h,  # in kpc
-                               halo_params['E_pot'] / halo_params['M_halo'],  # in (km / s)^2
+                               halo_params['E_pot'] / halo_params['M_halo'] / h,  # in (km / s)^2
                                halo_params['cNFW'])
+            print(f'E_pot : {E_pot}')
+            # stars = retrieve_particles(run, halo, snap, 'PartType4')
+            # phi_0 = stars['Potential'].min() / a
 
             # phi_bh = E_pot * R_vir / (c * norm) * np.log(1 + (c * norm / R_vir))
-            phi_bh = bh['Potential'] / a - E_pot
+            phi_bh = bh['Potential'] * (1e-1 ** 2) / a - E_pot
             # unphysE_m = (bh['Potential'] / a) + (0.5 * np.linalg.norm(bh['velocity']) ** 2)  # |v|^2 / 2 + \phi
             # physE_m = unphysE_m - phi_min  # E_m - \phi_min, physical total mechanical energy, in (km/s)^2
             E_bh = phi_bh + (0.5 * np.linalg.norm(bh['velocity']) ** 2)  # |v|^2 / 2 + \phi
+            vPhi = ((bh['position'][:, 0] * bh['velocity'][:, 1] - bh['velocity'][:, 0] * bh['position'][:, 1])
+                     / np.sqrt(bh["position"][:, 0] ** 2 + bh["position"][:, 1] ** 2))
 
             verbose and print(f'\tcentral bh properties:'
                               f'\n\t\t|v| = {float(np.linalg.norm(bh["velocity"]))} km/s'
@@ -136,31 +218,34 @@ def bhSloshing(run, halo, snaps, verbose=True):
                 redshifts = redshift
                 bh_coords = bh['position']  # in kpc
                 bh_norms = norm  # in kpc
-                bh_pots = bh['Potential'] / a  # in (km/s)^2
+                bh_pots = bh['Potential'] * (1e-1 ** 2) / a  # in (km/s)^2
                 bh_Es = E_bh  # in (km/s)^2
                 epsilons = epsilon
-                bh_velocity = np.linalg.norm(bh['velocity'])
+                bh_velocity = vPhi
+                bh_L = bh['angularMomentum'][:, 2] / bh['Masses']
 
             else:  # if not the first instance
                 redshifts = np.append(redshifts, redshift)
                 bh_coords = np.vstack((bh_coords, bh['position']))
                 bh_norms = np.append(bh_norms, norm)  # norms for 2-dim plot
-                bh_pots = np.append(bh_pots, (bh['Potential'] / a) - E_pot)  # value of potential at \vec{r}_bh
+                bh_pots = np.append(bh_pots, (bh['Potential'] * (1e-1 ** 2) / a) - E_pot)
+                # value of potential at \vec{r}_bh
                 bh_Es = np.append(bh_Es, E_bh)  # total mechanical energy per unit mass
                 epsilons = np.append(epsilons, epsilon)
-                bh_velocity = np.append(bh_velocity, np.linalg.norm(bh['velocity']))
+                bh_velocity = np.append(bh_velocity, vPhi)
+                bh_L = np.append(bh_L, bh['angularMomentum'][:, 2] / bh['Masses'])
 
         verbose and print(f'termine avec le snapshot {snap}.')
 
     _, lookback_times = get_lookbackTimes(run, snaps, redshifts=redshifts)
 
     verbose and print(f'\nbh_norms = {bh_norms}')
-
+    print(bh_L)
     output_file = f'bhSloshing.{run}.{halo}.npz'
-    print(bh_Es)
     np.savez_compressed(f'/z/rschisholm{base_path}/{output_file}',
                         bh_coords=bh_coords, bh_norms=bh_norms,
                         bh_pots=bh_pots, bh_energies=bh_Es, epsilon=epsilons, bh_velocity=bh_velocity,
+                        bh_L=bh_L,
                         redshifts=redshifts, lookback_times=lookback_times)
 
     return f'{base_path}/{output_file}'
@@ -188,10 +273,12 @@ def main(cluster):
           + (f'start, end snapshot -- {args.start}, {args.end}\n' if args.plot_type != 'rotCurve' else '')
           + '--------------------------------------------------------------------------------')
 
-    if args.plot_type == 'rotCurve':
+    if args.plot_type == 'history':
+        output_path = accretionHistory(args.run, args.halo, verbose=True)
+    elif args.plot_type == 'rotCurve':
         output_path = rotCurve(args.run, args.halo, args.snap)
     elif args.plot_type == 'orbits':
-        output_path = orbits(args.run, args.auxiliary_halo, args.halo)
+        output_path = orbits(args.run, args.halo)
     elif args.plot_type == 'bhSloshing':
         output_path = bhSloshing(args.run, args.halo, [args.start, args.end])
     else:
@@ -206,38 +293,47 @@ def plotting():
     # ------------------------------------------------
     type_plot = 'bhSloshing'
     run = '09_18_lastgigyear'
-    halo = 'halo_38'
-    smoothing = False  # apply scipy interpolation smoothing routine
+    halo = 'halo_41'
+    smoothing = True  # apply scipy interpolation smoothing routine
+    chisholm2026_plot = True
 
     # rotation curves --------------------------------
     snapshot = 127
 
     # orbits -----------------------------------------
-    subject_halo = 'smc'
+    subject_halo = 'halo_01'
 
     # bh perturbation --------------------------------
-    projection = '1-dim'
-    parameter = 'velocity'  # 'norm' or 'energy'
+    projection = '3-dim'
+    parameter = 'norm'  # 'norm' or 'energy'
     # ------------------------------------
+
+    if chisholm2026_plot:
+        from local.chisholm2026 import figure1
+        figure1()
+        exit(0)
 
     home = Path.home()
     current_file = Path(__file__)
     project_root = current_file.parent.parent  # adjust as needed
     basePath = home / project_root / 'halos' / run / halo / 'kinematics' / type_plot
 
-    if type_plot == 'rotCurve':
+    if type_plot == 'history':
+        dispatch_plot('kinematics', type_plot,
+                      input_path=f'{basePath}/{run}.{halo}.accretionHistory.npz',
+                      output_path=f'{basePath}/{run}.{halo}.accretionHistory.pdf')
+    elif type_plot == 'rotCurve':
         dispatch_plot('kinematics', type_plot,
                       input_path=f'{basePath}/{run}.{halo}.rotCurve.snap{snapshot}.npz',
                       output_path=f'{basePath}/{run}.{halo}.rotCurve.snap{snapshot}.pdf')
     elif type_plot == 'orbits':
         dispatch_plot('kinematics', type_plot,
-                      input_path=f'{basePath}.orbitalDistance.{run}.{halo}-{subject_halo}.npz',
-                      output_path=f'{basePath}.orbitalDistance.{run}.{halo}-{subject_halo}.pdf')
+                      input_path=f'{basePath}/orbitalDistance.{run}.{halo}-{subject_halo}.npz',
+                      output_path=f'{basePath}/orbitalDistance.{run}.{halo}-{subject_halo}.pdf')
     elif type_plot == 'bhSloshing':
         dispatch_plot('kinematics', type_plot, projection=projection, smoothing=smoothing, parameter=parameter,
                       input_path=f'{basePath}/bhSloshing.{run}.{halo}.npz',
-                      output_path=f'{basePath}/bhSloshing.{run}.{halo}.{projection}' +
-                                  (f'_{parameter}' if projection == '1-dim' else '') + '.png')
+                      output_path=f'{basePath}/bhSloshing.{run}.{halo}.{projection}.{parameter}.png')
 
 
 if __name__ == "__main__":

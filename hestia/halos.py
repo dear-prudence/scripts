@@ -20,7 +20,7 @@ def halo_dictionary(sim_run, halo_name):
         if sim_run == '09_18':
             halo_dict = {'m31': '127000000000002', 'halo_02': '127000000000002',
                          'mw': '127000000000003', 'lmc': '127000000000008', 'stream': '127000000000008',
-                         'halo_130': '127000000000130',
+                         'halo_130': '127000000000130', 'halo_454': '127000000000454',
                          'smc': '127000000001384', 'halo_1384': '127000000001384'}
         elif sim_run == '17_11':
             halo_dict = {}
@@ -28,7 +28,8 @@ def halo_dictionary(sim_run, halo_name):
             halo_dict = {}
         elif sim_run == '09_18_lastgigyear':
             halo_dict = {'m31': '307000000000002', 'mw': '307000000000003',
-                         'lmc': '307000000000008', 'stream': '307000000000008', 'smc': '307000000001476'}
+                         'lmc': '307000000000008', 'stream': '307000000000008', 'smc': '307000000001476',
+                         'halo_454': '307000000000540'}
         else:
             print('Error: routine is a WIP and cannot handle other simulation runs!')
             exit(1)

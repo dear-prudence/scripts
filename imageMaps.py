@@ -268,7 +268,7 @@ def package_data(run, halo, snaps, particle_type, param, dims, pixels, padding,
     from hestia.particles import retrieve_particles
     from hestia.halos import get_halo_params, get_centralBH
 
-    part_to_type = {'gas': 'PartType0', 'dm': 'PartType1', 'stars': 'PartType4'}
+    part_to_type = {'gas': 'PartType0', 'dm': 'PartType1', 'stars': 'PartType4', 'tout': 'tout'}
     part_type = part_to_type[particle_type]
 
     bins = [pixels, pixels]  # for the 2-dim histograms
@@ -393,7 +393,7 @@ def main(cluster):
     positional_args = [
         ('run', 'indicated simulation run, e.g. 09_18'),
         ('halo', 'halo to be processed, e.g. halo_08'),
-        ('particle_type', 'particle type to be processed, e.g. gas'),
+        ('particle_type', 'particle type to be processed, e.g. gas, stars, dm, tout'),
         ('parameter', 'parameter to be processed, e.g. massDen'),
     ]
 
@@ -467,8 +467,8 @@ def plotting():
     planes = ['x-y', 'x-z']
     run = '09_18_lastgigyear'
     halo = 'halo_41'  # chosen halo frame of reference, or 'stream' for MS-analog
-    particle_type = 'gas'
-    parameter = 'temperature'
+    particle_type = 'stars'
+    parameter = 'massDen'
     dims = [5, 20]  # in c-kpc, 0-entry is smaller image dimension, 1-entry is larger image dimension
     # ------------------------------------
     bool_centerPot = True

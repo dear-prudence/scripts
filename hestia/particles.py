@@ -104,9 +104,12 @@ def retrieve_particles(run, halo, snap, part_type, padding=None, verbose=True):
             # handles bh particles separately
             alpha = 1 / 10  # bounds_factor_virialRadius, in kpc
             # -----------------------------
-            processed_particles = filter_particles(all_particles,
-                                                   1e-3 * (pos_h - r_vir_h * alpha),
-                                                   1e-3 * (pos_h + r_vir_h * alpha))
+            processed_particles = transform_haloFrame(run, halo, snap,
+                                                      rid_h_units(
+                                                          filter_particles(
+                                                              all_particles,
+                                                              1e-3 * (pos_h - r_vir_h * alpha),
+                                                              1e-3 * (pos_h + r_vir_h * alpha)), z_, part_type))
 
     verbose and print(f'\t\tnumber of particles/cells extracted : {len(processed_particles["ParticleIDs"])}')
     return processed_particles
