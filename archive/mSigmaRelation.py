@@ -31,8 +31,8 @@ mode = 'dear-prudence'
 # ---------------------------------------------
 
 if mode == 'geras':
-    from scripts.hestia import get_accretion_curve
-    from scripts.hestia import time_edges
+    from archive.hestia import get_accretion_curve
+    from archive.hestia import time_edges
 
     snaps = [31, 127]  # AHF output only goes back to snapshot 32
     sim = '09_18'

@@ -2,12 +2,12 @@
 # it will return two numpy data files, which can be used to create a two-panel side-by-side movie
 import sys
 import numpy as np
-from scripts.hestia import append_particles
-from scripts.hestia import filter_particles
-from scripts.hestia import cosmo_transform
-from scripts.hestia import time_edges
-from scripts.hestia import center_lmc
-from scripts.hestia import calc_temperature
+from archive.hestia import append_particles
+from archive.hestia import filter_particles
+from archive.hestia import cosmo_transform
+from archive.hestia import time_edges
+from archive.hestia import center_lmc
+from archive.hestia import calc_temperature
 
 
 def create_weighted_histogram(x, y, temperature, bins):

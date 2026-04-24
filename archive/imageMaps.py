@@ -1,9 +1,9 @@
 import sys
 import numpy as np
-from scripts.hestia import append_particles, filter_particles
-from scripts.hestia import get_halo_params
-from scripts.hestia import calc_temperature
-from scripts.hestia import transform_haloFrame, rid_h_units
+from archive.hestia import append_particles, filter_particles
+from archive.hestia import get_halo_params
+from archive.hestia import calc_temperature
+from archive.hestia import transform_haloFrame, rid_h_units
 
 
 def create_weighted_histogram(part_type, param, x, y, weights, masses, background, bins, bounds=None):
@@ -84,7 +84,7 @@ def add_velocity(particles):
 
 
 def add_orbital_velocities(particles, run, halo, snap):
-    from scripts.hestia import get_rotation_curve
+    from archive.hestia import get_rotation_curve
     starting_idx = 307 if run == '09_18_lastgigyear' else 127
 
     """Compute rotation curves only if they haven't been computed before."""
@@ -133,7 +133,7 @@ def rhoH_to_nH(particles, mu=0.59):
 
 
 def add_nH(particles, snap, type_H):
-    from scripts.hestia import calc_numberDensity, calc_temperature, calc_fH0_cloudy
+    from archive.hestia import calc_numberDensity, calc_temperature, calc_fH0_cloudy
 
     X_H = 0.76
     mu = 0.59 if type_H == ('H1' or 'HII') else 1.00784
@@ -337,7 +337,7 @@ def make_snap(part_type, param, particles_full_depth, weights_full_depth, masses
 
 
 def package_data(run, param, dims, n_bins, particle_type, halo, bool_isolated_halo):
-    from scripts.hestia import get_lookbackTimes, get_redshift
+    from archive.hestia import get_lookbackTimes, get_redshift
 
     print('---------------------------------------------------\n'
           + 'Creating image-map...\n'
@@ -435,8 +435,8 @@ def package_data(run, param, dims, n_bins, particle_type, halo, bool_isolated_ha
 
 
 def plotting(typeplot, run, halo, sspt, param, dims, particle_type, planes=None):
-    from scripts.local.archive.plots_old import plot_imageMap, plot_imageMap_frames
-    from scripts.local.archive.plots_old import plot_chisholm2025_fig1
+    from scripts.util.archive.plots_old import plot_imageMap, plot_imageMap_frames
+    from scripts.util.archive.plots_old import plot_chisholm2025_fig1
 
     input_path = ('/Users/dear-prudence/Desktop/smorgasbord/images/' + run + '/' + halo + '/' + param + '/'
                   + run + '_' + halo + '_' + particle_type + '_' + param + '_'

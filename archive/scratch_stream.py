@@ -1,4 +1,4 @@
-from scripts.hestia import create_stream_snapshotFiles_lastgigyear
+from archive.hestia import create_stream_snapshotFiles_lastgigyear
 
 run = '09_18_lastgigyear'
 halo = 'stream'

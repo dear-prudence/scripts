@@ -3,9 +3,9 @@
 import sys
 import numpy as np
 from hestia import append_particles
-from scripts.hestia import filter_particles
-from scripts.hestia import time_edges
-from scripts.hestia import center_lmc
+from archive.hestia import filter_particles
+from archive.hestia import time_edges
+from archive.hestia import center_lmc
 
 
 def make_snap(snap_i, run, bins, size, axes):

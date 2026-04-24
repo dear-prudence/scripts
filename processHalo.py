@@ -1,7 +1,7 @@
 import h5py
 import argparse
 import numpy as np
-from hestia.particles import append_particles, convert_to_supported_dtype
+from archive.hestia import append_particles, convert_to_supported_dtype
 
 
 def format_val(val):
@@ -66,8 +66,8 @@ def extract_particle_ids(file_path, target_halo_id, verbose=True):
 
 
 def isolate_halo_padding(particles, run, halo, snap, cushioning_factor=2.):
-    from hestia.halos import get_halo_params
-    from hestia.particles import filter_particles
+    from archive.hestia import get_halo_params
+    from archive.hestia import filter_particles
 
     # cushioning_factor determines the scale factor multiplies by R_vir to serve as halo particle bounds (deafult=4)
 
@@ -82,8 +82,8 @@ def isolate_halo_padding(particles, run, halo, snap, cushioning_factor=2.):
 
 
 def isolate_halo_AHF(all_particles, run, halo, snap):
-    from hestia.halos import halo_dictionary
-    from hestia.geometry import get_redshift
+    from archive.hestia import halo_dictionary
+    from archive.hestia.geometry import get_redshift
 
     particles = isolate_halo_padding(all_particles, run, halo, snap)
 
@@ -120,7 +120,7 @@ def isolate_halo_AHF(all_particles, run, halo, snap):
 
 
 def create_halo_hdf5(run, halo, snap, output_base_path, verbose=True):
-    from hestia.geometry import transform_haloFrame, rid_h_units, get_redshift
+    from archive.hestia.geometry import transform_haloFrame, rid_h_units, get_redshift
 
     snap_ = '0' + str(snap) if snap < 100 else str(snap)
     z = get_redshift(run, snap)
@@ -229,8 +229,8 @@ def create_halo_hdf5(run, halo, snap, output_base_path, verbose=True):
 
 
 def reconstruct_AHF(halo, output_base_path):
-    from hestia.geometry import get_redshift
-    from hestia.halos import halo_dictionary
+    from archive.hestia.geometry import get_redshift
+    from archive.hestia import halo_dictionary
     import pandas as pd
 
     basePath = '/store/clues/HESTIA/RE_SIMS/8192/GAL_FOR/09_18_lastgigyear/AHF_output/'
@@ -291,7 +291,7 @@ def reconstruct_AHF(halo, output_base_path):
 
 def main():
     # --------------------------------------
-    fileType = 'hdf5'  # 'hdf5' for snapshot files, or 'dat' for reconstructing AHF halo.dat files fro 09_18_lastgigyear
+    fileType = 'hdf5'  # 'hdf5' for snapshot files, or 'dat' for reconstructing AHF halo.dat files for 09_18_lastgigyear
     run = '09_18'
     halo = 'halo_08'
     snaps = [67, 127]
@@ -303,7 +303,7 @@ def main():
     parser.add_argument('run', nargs='?', default=run, help='simulation run')
     parser.add_argument('halo', nargs='?', default=halo, help='halo to be processed')
     # Optional arguments for padding or not (padding indicates including additional particles in the nearby cosmic
-    # environment to preserve the local cosmography, mainly used for larger images and such)
+    # environment to preserve the util cosmography, mainly used for larger images and such)
 
     # runs into error when not using padding with 09_18_lastgigyear
     parser.add_argument('--padding', dest='padding', action='store_true', help="Add padding")

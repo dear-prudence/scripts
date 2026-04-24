@@ -1,9 +1,9 @@
 import sys
 import numpy as np
-from scripts.hestia import append_particles, filter_particles, cosmo_transform
-from scripts.hestia import center_halo
-from scripts.hestia import calc_temperature
-from scripts.hestia import transform_haloFrame
+from archive.hestia import append_particles, filter_particles, cosmo_transform
+from archive.hestia import center_halo
+from archive.hestia import calc_temperature
+from archive.hestia import transform_haloFrame
 
 
 def stream_filtering(particles, ids):
@@ -139,7 +139,7 @@ def param_processing(param, particles, run, snap, part_type, ids=None):
 
 
 def retrieve_particles(snap_i, z, sim_run, part_type, size, particle_halo, reference_frame, bool_isolated_halo=False):
-    from scripts.hestia import halo_dictionary
+    from archive.hestia import halo_dictionary
     h = 0.677
     if snap_i < 100:
         snap = '0' + str(snap_i)
@@ -203,7 +203,7 @@ def make_snap(particles, weights, part_type, param, bins, axis, size):
 
 
 def package_data(sim_run, param, dims, n_bins, snaps, particle, particle_halo, reference_halo, bool_isolated_halo):
-    from scripts.hestia import time_edges
+    from archive.hestia import time_edges
 
     part_to_type = {'gas': 'PartType0', 'dm': 'PartType1', 'stars': 'PartType4'}
     part_type = part_to_type[particle]
@@ -317,7 +317,7 @@ def package_data(sim_run, param, dims, n_bins, snaps, particle, particle_halo, r
 
 
 def plotting(sim_run, param, dims, particle, particle_halo, bool_isolated_halo, planes=None):
-    from scripts.local.archive.plots_old import plot_imageMap_frames
+    from scripts.util.archive.plots_old import plot_imageMap_frames
 
     input_path = ('/Users/dear-prudence/Desktop/smorgasbord/isolateStream/' + param + '/'
                   + sim_run + '_'

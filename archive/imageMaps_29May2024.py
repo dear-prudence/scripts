@@ -43,7 +43,7 @@ class MassDensityProcessor(ParamProcessor):
 
 class H0Processor(ParamProcessor):
     def process(self):
-        from scripts.hestia import calc_numberDensity
+        from archive.hestia import calc_numberDensity
         if self.part_type == 'PartType0':
             fini = self.particles
             weights = calc_numberDensity(fini['Density'] * fini['GFM_Metals'][:, 0] * fini['NeutralHydrogenAbundance'])
@@ -56,7 +56,7 @@ class H0Processor(ParamProcessor):
 
 class H1Processor(ParamProcessor):
     def process(self):
-        from scripts.hestia import calc_numberDensity
+        from archive.hestia import calc_numberDensity
         if self.part_type == 'PartType0':
             fini = self.particles
             weights = calc_numberDensity(fini['Density'] * fini['GFM_Metals'][:, 0]
@@ -70,7 +70,7 @@ class H1Processor(ParamProcessor):
 
 class TemperatureProcessor(ParamProcessor):
     def process(self):
-        from scripts.hestia import calc_temperature
+        from archive.hestia import calc_temperature
         X_H = 0.76
         if self.part_type == 'PartType0':
             fini = self.particles
@@ -164,9 +164,9 @@ def make_snap(part_type, param, particles_full_depth, weights_full_depth, masses
 
 
 def package_data(run, halo, snaps, particle_type, param, dims, pixels):
-    from scripts.hestia import get_lookbackTimes, get_redshift
-    from scripts.hestia import retrieve_particles
-    from scripts.hestia import get_halo_params
+    from archive.hestia import get_lookbackTimes, get_redshift
+    from archive.hestia import retrieve_particles
+    from archive.hestia import get_halo_params
 
     part_to_type = {'gas': 'PartType0', 'dm': 'PartType1', 'stars': 'PartType4'}
     part_type = part_to_type[particle_type]
@@ -303,7 +303,7 @@ def main():
 
 
 def plotting():
-    from scripts.local.archive.images import plot_imageMap_frames
+    from scripts.util.archive.images import plot_imageMap_frames
 
     # PARAMETERS TO CHANGE
     # ------------------------------------

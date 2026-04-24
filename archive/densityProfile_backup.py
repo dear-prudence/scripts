@@ -1,9 +1,9 @@
 """This script will extract particles from a specified snapshot and plot their relative mass density in
 temperature-coordinate space, the so-called temperature profile of a specified halo"""
-from scripts.hestia import time_edges
-from scripts.hestia import calc_temperature
-from scripts.hestia import transform_haloFrame
-from scripts.hestia import get_halo_params
+from archive.hestia import time_edges
+from archive.hestia import calc_temperature
+from archive.hestia import transform_haloFrame
+from archive.hestia import get_halo_params
 
 
 def add_temperature(particles):
@@ -116,8 +116,8 @@ def beta_profile(r, alpha, beta):
 
 
 def retrieve_particles(snap_i, z, sim, halo):
-    from scripts.hestia import halo_dictionary
-    from scripts.hestia import rid_h_units
+    from archive.hestia import halo_dictionary
+    from archive.hestia import rid_h_units
 
     using_isolated_halo = True
 

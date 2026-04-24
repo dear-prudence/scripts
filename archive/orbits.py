@@ -55,8 +55,8 @@ def besla2012():
 
 
 def package_data(sim_run, subject_halo, reference_halo):
-    from scripts.hestia import time_edges
-    from scripts.hestia import calc_distanceHalo
+    from archive.hestia import time_edges
+    from archive.hestia import calc_distanceHalo
 
     snaps = [67, 127]
     time_e = time_edges(sim_run, snaps=np.arange(snaps[1], snaps[0], step=-1))

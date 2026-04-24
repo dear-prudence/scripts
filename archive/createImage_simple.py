@@ -1,4 +1,4 @@
-from scripts.local.archive.plots_old import create_image
+from scripts.util.archive.plots_old import create_image
 
 base_path = '/Users/ursa/Desktop/mag_sims/output'
 

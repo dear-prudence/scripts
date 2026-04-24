@@ -1,319 +1,555 @@
-import sys
 import numpy as np
-from scripts.hestia import append_particles, filter_particles, cosmo_transform
-from scripts.hestia import time_edges, center_halo
-from scripts.hestia import get_halo_params
-from scripts.hestia import calc_temperature
-from scripts.hestia import transform_haloFrame
+import argparse
+import inspect
+import os
 
 
-def create_weighted_histogram(x, y, weights, bins, mode, part_type, bounds=None):
-    # Create a 2D histogram
-    hist, x_e, y_e = np.histogram2d(x, y, bins=bins, range=bounds)
-    # Compute the sum of densities in each bin
-    sum_hist, _, _ = np.histogram2d(x, y, bins=(x_e, y_e), range=bounds, weights=weights)
-    # Avoid division by zero
-    with np.errstate(divide='ignore', invalid='ignore'):
-        # Compute the average temperature in each bin
-        avg_hist = np.divide(sum_hist, hist, where=(hist != 0))
-    if mode == 'massDen' or 'temperature':
-        threshold = 1
-        avg_hist[hist < threshold] = 0
-    elif mode == 'metallicity':
-        threshold = 1
-        avg_hist[hist < threshold] = -10  # metal-poor primordial gas
-    if part_type == 'PartType0':
-        return avg_hist, x_e, y_e
-    # returns the total (mass) per bin, instead of average mass per particle
-    elif part_type == 'PartType4':
-        vol_per_bin = float(bounds[0, 1] - bounds[0, 0] / bins[0])
-        return sum_hist / vol_per_bin, x_e, y_e
+class GasProcessor:
+    def __init__(self, cells):
+        self.cells = cells
+
+    def process_massDen(self):  # mass density of the gas cells in M_solar/kpc^3
+        return {
+            'particles': self.cells,
+            'weights': self.cells['Density'],
+            'masses': self.cells['Masses'],
+            'background': 1e-10  # arbitrarily diffuse background
+        }
+
+    def process_H0(self):
+        from hestia.gas import calc_numberDensity
+        return {
+            'particles': self.cells,
+            'weights': calc_numberDensity(self.cells['Density'] * self.cells['GFM_Metals'][:, 0]
+                                          * self.cells['NeutralHydrogenAbundance']),
+            'masses': self.cells['Masses'] * self.cells['GFM_Metals'][:, 0],  # H0 mass
+            'background': 1e-10  # arbitrarily diffuse background
+        }
+
+    def process_H1(self):
+        from hestia.gas import calc_numberDensity
+        return {
+            'particles': self.cells,
+            'weights': calc_numberDensity(self.cells['Density'] * self.cells['GFM_Metals'][:, 0]
+                                          * (1 - self.cells['NeutralHydrogenAbundance'])),
+            'masses': self.cells['Masses'] * self.cells['GFM_Metals'][:, 0],  # H0 mass
+            'background': 1e-10  # arbitrarily diffuse background
+        }
+
+    def process_columnH0(self):
+        return {
+            'particles': self.cells,
+            'weights': np.ones(self.cells['ParticleIDs'].shape),
+            'masses': self.cells['ParticleIDs'].shape,
+            'background': 1
+        }
+
+    def process_temperature(self):
+        from hestia.gas import calc_temperature
+        return {
+            'particles': self.cells,
+            'weights': calc_temperature(self.cells['InternalEnergy'], self.cells['ElectronAbundance'],
+                                        x_h=(self.cells['GFM_Metals'][:, 0] if 'GFM_Metals' in self.cells.keys()
+                                             else 0.76)),
+            'masses': self.cells['Masses'],
+            'background': 1e5  # approximate temperature of the IGM
+        }
+
+    def process_metallicity(self):
+        particles = self.filter_unphysical_Z()
+        return {
+            'particles': particles,
+            'weights': np.log10(particles['GFM_Metallicity'] / particles['GFM_Metals'][:, 0]),
+            'masses': particles['Masses'],
+            'background': 1e-10  # arbitrarily metal-poor gas
+        }
+
+    def process_v(self):
+        coordinate_dict = {'x': 0, 'y': 1, 'z': 2}
+        # ----------------------------------------------
+        desired_direction = 'x'
+        # ----------------------------------------------
+        return {
+            'particles': self.cells,
+            'weights': self.cells['Halo_Velocities'][:, coordinate_dict[desired_direction]],
+            'masses': self.cells['Masses'],
+            'background': 0  # v_z = 0
+        }
+
+    def process_L(self):
+        coordinate_dict = {'x': 0, 'y': 1, 'z': 2}
+        # ----------------------------------------------
+        desired_direction = 'x'
+        # ----------------------------------------------
+        return {
+            'particles': self.cells,
+            'weights': self.cells['Angular_Momenta'][:, coordinate_dict[desired_direction]],
+            'masses': self.cells['Masses'],
+            'background': 0  # L_i = 0
+        }
+
+    def filter_unphysical_Z(self):
+        mask = self.cells['GFM_Metallicity'] > 0
+        return {k: v[mask] for k, v in self.cells.items()}
 
 
-def filter_unphysical_metallicities(data):
-    for key in data.keys():
-        data[key] = np.array(data[key])  # Convert to numpy array for easier indexing
-    # Get the indices where metallicities are negative
-    original_length = len(data['GFM_Metallicity'])
-    indices_to_keep = np.where(data['GFM_Metallicity'][:] > 0)[0]
-    print('Done with unphysical metallicity filtering, number of thrown-out particles: '
-          + str(original_length - len(indices_to_keep)))
-    for key in data.keys():
-        data[key] = data[key][indices_to_keep]
-    return data
+class DarkMatterProcessor:
+    def __init__(self, dms):
+        self.dms = dms
+
+    def process_massDen(self):  # mass density of the gas cells in M_solar/kpc^3
+        return {
+            'particles': self.dms,
+            'weights': np.ones(self.dms['ParticleIDs'].shape),
+            # * 1.5 * 10 ** 5,  # taken from the hestia paper, \S 3.2.2
+            'masses': self.dms['Masses'],
+            'background': 1e-10  # arbitrarily diffuse background
+        }
 
 
-def param_processing(param, particles, run, snap, part_type):
-    h = 0.677
-    if param == 'numDen':
-        particles_fini = particles
-        weights = None
-    elif param == 'massDen':
-        if part_type == 'PartType0':
-            particles_fini = particles
-            weights = particles['Density']
-        elif part_type == 'PartType4':
-            # stars have SFT > 0, wind particles have SFT < 0
-            stellar_mask = particles['GFM_StellarFormationTime'] > 0
-            particles_fini = {key: val[stellar_mask] for key, val in particles.items()}
-            weights = particles_fini['Masses'] * 1e10 / h
+class StarsProcessor:
+    def __init__(self, stars):
+        self.stars = stars
+
+    def filter_stars(self):
+        # stars have SFT > 0, wind particles have SFT < 0
+        stellar_mask = self.stars['GFM_StellarFormationTime'] > 0
+        return {key: val[stellar_mask] for key, val in self.stars.items()}
+
+    def process_massDen(self):  # surface mass density of the star particles in M_solar/kpc^2
+        filtered_stars = self.filter_stars()
+        return {
+            'particles': filtered_stars,
+            'weights': filtered_stars['Masses'],
+            'masses': filtered_stars['Masses'],
+            'background': 1e-10  # arbitrarily diffuse background
+        }
+
+    def process_surfaceBrightness(self):  # surface brightness of the star particles for given band in mag/kpc^2
+        band_dict = {'U': 0, 'B': 1, 'V': 2, 'K': 3, 'g': 4, 'r': 5, 'i': 6, 'z': 7}
+        # these bands are Buser's 'X' filter, where 'X' = {U, B3, V} (Vega magnitudes),
+        # then IR K filter + Palomar 200 IR detectors + atmosphere.57 (Vega),
+        # then SDSS Camera 'X' Response Function, airmass = 1.3 (June 2001), where 'X'= {g, r, i, z} (AB magnitudes).
+        filtered_stars = self.filter_stars()
+        # ----------------------------------------------
+        desired_band = 'V'
+        # ----------------------------------------------
+        return {
+            'particles': filtered_stars,
+            # 2 for V-band Vega, 5 for r-band SDSS
+            # calculates luminosity L (up to factor L_0)
+            'weights': np.power(10, -0.4 * filtered_stars['GFM_StellarPhotometrics'][:, band_dict[desired_band]]),
+            'masses': np.ones(filtered_stars['Masses'].shape),
+            'background': 100  # arbitrarily dark background
+        }
+
+    def process_metallicity(self):
+        stars = self.filter_stars()
+        mask = stars['GFM_Metallicity'] > 0
+        filtered_stars = {k: v[mask] for k, v in stars.items()}
+        return {
+            'particles': filtered_stars,
+            'weights': np.log10(filtered_stars['GFM_Metallicity'] / filtered_stars['GFM_Metals'][:, 0]),
+            'masses': filtered_stars['Masses'],
+            'background': 1e-10  # arbitrarily metal-poor gas
+        }
+
+    def process_potential(self):
+        stars = self.filter_stars()
+        mask = stars['GFM_Metallicity'] > 0
+        filtered_stars = {k: v[mask] for k, v in stars.items()}
+        return {
+            'particles': filtered_stars,
+            'weights': filtered_stars['Potential'] - np.min(filtered_stars['Potential']),
+            'masses': filtered_stars['Masses'],
+            'background': 0  # arbitrarily metal-poor gas
+        }
+
+    def process_mbp(self):
+        from hestia.stars import get_mbp
+        stars = self.filter_stars()
+        mask = stars['GFM_Metallicity'] > 0
+        filtered_stars = {k: v[mask] for k, v in stars.items()}
+        mbp_ids = get_mbp('09_18_lastgigyear', 'halo_08', snap=119, numParts=100, verbose=True)
+        mbp_mask = np.isin(filtered_stars['ParticleIDs'], mbp_ids)
+        mbp_stars = {k: v[mbp_mask] for k, v in filtered_stars.items()}
+        print(f'\t\t{len(mbp_stars["ParticleIDs"])} mbps located in this snapshot\n'
+              f'\t\t\tmean(norm) : {np.average(np.linalg.norm(mbp_stars["position"].T, axis=0)):2f} kpc')
+        return {
+            'particles': mbp_stars,
+            'weights': mbp_stars['Masses'],
+            'masses': mbp_stars['Masses'],
+            'background': 1e-10  # arbitrarily low density
+        }
+
+
+# noinspection PyUnboundLocalVariable
+def param_processing(part_type, param, particles, verbose=True):
+    verbose and print(f'\t\tdispatching "{part_type}/{param}" to corresponding routine ...')
+
+    if part_type == 'PartType0':  # gas
+        gas_proc = GasProcessor(particles)
+        dispatcher = {
+            'massDen': gas_proc.process_massDen,
+            'num_H0': gas_proc.process_H0,
+            'num_H1': gas_proc.process_H1,
+            'column_H0': gas_proc.process_columnH0,
+            'temperature': gas_proc.process_temperature,
+            'metallicity': gas_proc.process_metallicity,
+            'velocity': gas_proc.process_v,
+            'L': gas_proc.process_L,
+        }
+    elif part_type == 'PartType1':  # dm
+        dm_proc = DarkMatterProcessor(particles)
+        dispatcher = {
+            'massDen': dm_proc.process_massDen,
+        }
+    elif part_type == 'PartType4':  # stars
+        stars_proc = StarsProcessor(particles)
+        dispatcher = {
+            'massDen': stars_proc.process_massDen,
+            'surfaceBrightness': stars_proc.process_surfaceBrightness,
+            'metallicity': stars_proc.process_metallicity,
+            'potential': stars_proc.process_potential,
+            'mbp': stars_proc.process_mbp,
+        }
+
+    # return <-- particles, weights, masses, background = dispatcher[param]()  # now it runs
+    return dispatcher[param]()
+
+
+def make_snap(part_type, particles_full_depth, param, weights_full_depth, masses_full_depth, background,
+              bins, axis, size, bool_sph, verbose):
+    from hestia.image import create_projection_histogram, sph_kernel_projection, sph_columnH0_projection
+
+    # Get the indices not equal to the specified axis
+    cartesian = np.array([0, 1, 2])
+    axs = cartesian[cartesian != axis]
+
+    bounds = np.array([[-1 * size[axs[0]] / 2, size[axs[0]] / 2], [-1 * size[axs[1]] / 2, size[axs[1]] / 2]])
+
+    # ----------------------------------------------
+    # to be compatible with depreceated keys (will remove eventually)
+    if 'Halo_Coordinates' in particles_full_depth.keys():
+        position = 'Halo_Coordinates'
+    else:
+        position = 'position'
+    # ----------------------------------------------
+
+    if param == 'column_H0':
+        verbose and print(f'\t\t parameter = {param} detected, calling hestia.image.column_H0()')
+        particles = particles_full_depth
+
+        # Estimate smoothing lengths from mass and density
+        mass = particles["Masses"]  # in Msun
+        density = particles["Density"]  # in Msun / kpc^3
+        volume = mass / density  # kpc^3
+        hsml = (3.0 / (4.0 * np.pi) * volume) ** (1.0 / 3.0)  # kpc
+
+        return sph_columnH0_projection(particles[position][:, axs[0]],
+                                       particles[position][:, axs[1]],
+                                       hsml=hsml, masses=particles['Masses'],
+                                       h_frac=particles['GFM_Metals'][:, 0],
+                                       neutral_frac=particles['NeutralHydrogenAbundance'], bounds=bounds,
+                                       nbins=bins[0], verbose=verbose)
+    else:
+        verbose and print(f'\t\t truncating particles, column depth = {size[axis]} kpc')
+        column_mask = np.abs(particles_full_depth[position][:, axis]) < (size[axis] / 2)
+        particles = {key: val[column_mask] for key, val in particles_full_depth.items()}
+        weights = weights_full_depth[column_mask]
+        masses = masses_full_depth[column_mask]
+
+        if bool_sph:
+            # Estimate smoothing lengths from mass and density
+            mass = particles["Masses"]  # in Msun
+            density = particles["Density"]  # in Msun / kpc^3
+            volume = mass / density  # kpc^3
+            hsml = (3.0 / (4.0 * np.pi) * volume) ** (1.0 / 3.0)  # kpc
+            verbose and print(f'\t\t sph argument detected, mean(hsml) = {np.average(hsml)} kpc'
+                              f'\n\t\t calling hestia.image.sph_kernel_projection()')
+            return sph_kernel_projection(particles[position][:, axs[0]],
+                                         particles[position][:, axs[1]],
+                                         hsml=hsml, weights=weights, masses=masses,
+                                         bounds=bounds, n_bins=bins[0], verbose=verbose)
         else:
-            exit(1)
-    elif param == 'temperature':
-        particles['Temperature'] = calc_temperature(u=np.array(particles['InternalEnergy']),
-                                                    e_abundance=np.array(particles['ElectronAbundance']),
-                                                    x_h=np.array(particles['GFM_Metals'][:, 0]))
-        particles_fini = particles
-        weights = particles_fini['Temperature']
-    elif param == 'velocity':
-        _, _, halo_vel, _ = get_halo_params(run, halo, snap)
-        vel_mags = np.array([])
-        for j in range(len(particles['Velocities'])):
-            vel_mags = np.append(vel_mags, np.linalg.norm(particles['Velocities'][j] - halo_vel))
-        particles_fini = particles
-        weights = particles_fini['Velocity']
-    elif param == 'metallicity':
-        particles_fini = filter_unphysical_metallicities(particles)
-        weights = np.log10(particles_fini['GFM_Metallicity'] / particles_fini['GFM_Metals'][:, 0])
-    elif param == 'AGNradiation':
-        particles_fini = particles
-        weights = particles_fini['GFM_AGNRadiation']
-    elif param == 'nH0':
-        particles_fini = particles
-        weights = particles_fini['NeutralHydrogenAbundance']
-    else:
-        print('Error: invalid post-processing parameter!')
-        exit(1)
-
-    return weights, particles_fini
+            verbose and print(f'\t\t calling hestia.image.create_projection_histogram()')
+            return create_projection_histogram(part_type, param,
+                                               particles[position][:, axs[0]],
+                                               particles[position][:, axs[1]],
+                                               weights=weights, masses=masses, background=background,
+                                               bins=bins, bounds=bounds, verbose=verbose)
 
 
-def retrieve_particles(snap_i, z, run, part_type, size, follow_gal=None, isolate_halo=False, corona=False, frame=None):
-    h = 0.677
-    if snap_i < 100:
-        snap = '0' + str(snap_i)
-    else:
-        snap = str(snap_i)
+def package_data(run, halo, snaps, particle_type, param, dims, pixels, padding,
+                 bool_h0, bool_bar, bool_bh, bool_sph, verbose):
+    from hestia.geometry import get_lookbackTimes, get_redshift
+    from hestia.particles import retrieve_particles
+    from hestia.halos import get_halo_params, get_centralBH
 
-    halo_to_id = {'lmc': '010', 'mw': '003', 'halo_08': '008', 'halo_11': '011',
-                  'halo_15': '015', 'halo_16': '016', 'halo_21': '021', 'halo_23': '023', 'halo_27': '027',
-                  'halo_28': '028', 'halo_54': '054', 'halo_94': '094', 'halo_130': '130'}
-    halo_id = halo_to_id[follow_gal]
+    part_to_type = {'gas': 'PartType0', 'dm': 'PartType1', 'stars': 'PartType4', 'tout': 'tout'}
+    part_type = part_to_type[particle_type]
 
-    l_b, u_b = center_halo(run=run, halo_id=halo_id, snap=snap, size=size) * 1e-3  # these are in _h units!
+    bins = [pixels, pixels]  # for the 2-dim histograms
+    redshifts, lookback_times = get_lookbackTimes(run, np.array(range(snaps[1], snaps[0], -1)))
 
-    if part_type == 'PartType0':
-        key_names = ['Coordinates', 'Density', 'ElectronAbundance', 'GFM_AGNRadiation', 'GFM_Metallicity', 'GFM_Metals',
-                     'InternalEnergy', 'Masses', 'NeutralHydrogenAbundance', 'StarFormationRate', 'Velocities']
-    elif part_type == 'PartType4':
-        key_names = ['Coordinates', 'GFM_Metallicity', 'GFM_Metals', 'Masses', 'Velocities', 'GFM_StellarFormationTime']
-    else:
-        print('Error: Invalid particle type!')
-        exit(1)
+    # Dictionary to hold results for each axis/dimension
+    all_image = {'y-z': None, 'x-z': None, 'x-y': None,
+                 'y_e': None, 'z_e': None, 'x_e': None}
 
-    if isolate_halo is True:
-        base_path = ('/z/rschisholm/storage/snapshots_' + halo + ('/cgm' if corona is True else '')
-                     + '/snapshot_' + snap + '.hdf5')
-        file_paths = [base_path]
-    else:
-        base_path = ('/store/clues/HESTIA/RE_SIMS/8192/GAL_FOR/' + run + '/output_2x2.5Mpc/snapdir_'
-                     + snap + '/snapshot_' + snap + '.')
-        file_extension = '.hdf5'
-        # Generate file paths using a loop
-        file_paths = [base_path + str(x) + file_extension for x in range(8)]
-    # Initialize the resulting array
-    all_particles = {name: None for name in key_names}
-    # Loop through the file paths and append coordinates
-    print('Processing Snapshot ' + snap + '...')
-    for file_path in file_paths:
-        all_particles = append_particles(part_type, file_path, key_names=key_names,
-                                         existing_arrays=all_particles)
-    # Filter particles based on the bounding box
-    filtered_particles = cosmo_transform(filter_particles(all_particles, l_b, u_b),
-                                         'ckpc/h', 'ckpc', z, part_type=part_type)
-    if frame is not None:
-        rotated_particles = transform_haloFrame(run, halo_id, snap, filtered_particles)
-    else:
-        rotated_particles = filtered_particles
+    # -----------------------
+    sph_snapshots = [96, 110, 118, 119, 127]  # for image map plot in chisholm+2025
+    # -----------------------
 
-    return rotated_particles, l_b / h, u_b / h
+    virial_radii, center_h0, center_bar, central_bh = np.array([]), np.ones(3), np.ones(3), np.ones(3)
 
+    for snap in range(snaps[1], snaps[0], -1):
+        z_ = get_redshift(run, snap)
 
-def make_snap(snap_i, z, run, part_type, param, bins, size, axs, follow_gal=None, isolate_halo=False,
-              corona=False, frame=None):
-    h = 0.677
-    # bins object must be a two element list
-    # axes object follows the formal [x_axis, y_axis] (i.e. if plotting z vs y, axes = [1, 2])
+        verbose and print(f'\nen train de travailler au snapshot * {snap}, z = {z_} * ...')
+        particles = retrieve_particles(run, halo, snap, part_type, padding=padding, verbose=verbose)
 
-    # l_b and u_b are in ckpc (converted from _h units)
-    particles, l_b, u_b = retrieve_particles(snap_i, z, run, part_type, size, follow_gal=follow_gal,
-                                             isolate_halo=isolate_halo, corona=corona, frame=frame)
-    weights, particles_fini = param_processing(param, particles, run, snap_i, part_type)
-    print(len(particles_fini['Coordinates'][:, 0]))
-    print(particles_fini['Coordinates'][:, 0][0])
-    if frame is not None:
-        # size is in _h units
-        bounds = np.array([[-1 * size[axs[0]] / 2, size[axs[0]] / 2], [-1 * size[axs[1]] / 2, size[axs[1]] / 2]]) / h
-    else:
-        bounds = np.array([[l_b[axs[0]], u_b[axs[0]]], [l_b[axs[1]], u_b[axs[1]]]])
+        # Processes the particles using Processor modules located above
+        exported_dict = param_processing(part_type, param, particles, verbose=verbose)
+        particles, weights, masses, background = (exported_dict['particles'], exported_dict['weights'],
+                                                  exported_dict['masses'], exported_dict['background'])
+        verbose and print(f'\tprocessed {len(particles["ParticleIDs"])} particles/cells with the following properties:'
+                          + f'\n\t\t mean({param}.weights) = {np.average(weights)}'
+                          + f'\n\t\t mean({particle_type}.masses) = {np.average(masses)}'
+                          + f'\n\t\t background = {background}')
 
-    return create_weighted_histogram(particles_fini['Coordinates' if frame is None else 'Halo_Coordinates'][:, axs[0]],
-                                     particles_fini['Coordinates' if frame is None else 'Halo_Coordinates'][:, axs[1]],
-                                     weights=weights, bins=bins,
-                                     bounds=bounds, part_type=part_type,
-                                     mode=param)
+        if halo != 'stream':  # if processing a halo ...
+            halo_params = get_halo_params(run, halo, snap)
+            virial_radii = np.append(virial_radii, halo_params['R_vir'])
 
+        # Loop through the axes
+        for axis, name_i, edge_i in zip(range(3), ['y-z', 'x-z', 'x-y'], ['y_e', 'z_e', 'x_e']):
+            # creates the prism to restrict particles being plotted by
+            S = np.array([dims[1], dims[1], dims[1]])
+            S[axis] = dims[0]
 
-# ------------------------------------
-machine = 'dear-prudence'
-# ------------------------------------
-simulation_run = '09_18'
-parameter = 'temperature'
-dims = [100, 800]  # in c-kpc, 0-entry is smaller image dimension, 1-entry is larger image dimension
-axes = [0, 1]
-bins_ = 400
-snaps = [67, 127]  # first and last snapshot of the series to be compiled (i.e. bounds in time)
-halo = 'halo_15'
-Particle = 'gas'
-frame_ = ''
-isolated_halo = False
-Corona = False
-type_plot = 'frames'
-manual = False
-# ------------------------------------
-
-n_bins = [bins_, bins_]
-if Particle == 'stars':
-    particle = 'PartType4'
-else:
-    particle = 'PartType0'
-
-if machine == 'geras':
-    if __name__ == "__main__":
-
-        spatial_size = [dims[0] for i in range(3)]
-        for ax in axes:
-            spatial_size[ax] = dims[1]
-        S = {'Coordinates': np.array(spatial_size)}
-
-        time_edges = time_edges(sim=simulation_run, snaps=np.arange(snaps[1], snaps[0], step=-1))
-        for i in range(snaps[1], snaps[0], -1):
-            S_h = cosmo_transform(S.copy(), 'ckpc', 'ckpc/h', z=time_edges[127 - i][0])
-            print('time: $z = $' + str(time_edges[127 - i][0]))
-            current_snapshot, x_edges, y_edges = make_snap(i, float(time_edges[127 - i][0]), simulation_run,
-                                                           part_type=particle, param=parameter, bins=n_bins,
-                                                           size=np.array(S_h['Coordinates']),
-                                                           axs=axes, follow_gal=halo, isolate_halo=isolated_halo,
-                                                           corona=Corona, frame=frame_)
-            print(np.max(current_snapshot))
-            print(current_snapshot)
-            if i == snaps[1]:
-                all_snapshots = current_snapshot
+            # -----------------------
+            if bool_sph or (snap in sph_snapshots and name_i == 'x-z' and particle_type == 'PartType0'):
+                bool_sph = True
             else:
-                # Append the new snapshot
-                all_snapshots = np.dstack((all_snapshots, current_snapshot))
-            print('Snapshot ' + str(i) + ': check')
+                bool_sph = False
+            # -----------------------
 
-            # Save data
-            np.savez('/z/rschisholm/storage/images/' + parameter + '/' + simulation_run + '_'
-                     + ('gas' if particle == 'PartType0' else 'stars') + '_' + parameter + '_' + halo + '_'
-                     + str(dims[0]) + 'x' + str(dims[1]) + 'ckpc_'
-                     + 'bin' + str(round(spatial_size[axes[0]] / float(n_bins[0]), 2)) + 'ckpc_'
-                     + str(axes[0]) + '_' + str(axes[1])
-                     + ('isolated' if isolated_halo is True else '')
-                     + ('corona' if Corona is True else '')
-                     + ('haloFrame' if frame_ == 'halo' else '')
-                     + '.npz',
-                     data=all_snapshots, x_edges=x_edges, y_edges=y_edges, time=time_edges)
+            verbose and print(f'\tprojecting particles/cells onto {name_i}--plane ...')
+            current_image, i_edge, j_edge = make_snap(part_type, particles, param, weights, masses, background,
+                                                      bins, axis, S, bool_sph, verbose=verbose)
 
-        # Indicate that the script has completed its task
-        print('Done!')
-        # Terminate the script
-        sys.exit(0)
+            # Initialize arrays if this is the first snapshot
+            if snap == snaps[1]:
+                all_image[name_i] = current_image.reshape((pixels, pixels, 1))
+                # store the edges, for the x-z case, store the z_edges (second axis) instead
+                all_image[edge_i] = j_edge if axis == 1 else i_edge
+
+            else:
+                # Append new snapshot data
+                all_image[name_i] = np.dstack((all_image[name_i], current_image.reshape((pixels, pixels, 1))))
+                all_image[edge_i] = j_edge if axis == 1 else i_edge  # edges only need to be stored once
+
+        # as a first order approx., simply calculating weighted average position of nuclear particles
+        if bool_h0:
+            from hestia.gas import get_h0Center
+            center_h0_i = get_h0Center(run, halo, snap, disk_cutoff=5, verbose=True)
+            center_h0 = np.vstack((center_h0, center_h0_i))
+        if bool_bar:
+            from hestia.stars import get_barCenter
+            center_bar_i = get_barCenter(run, halo, snap, disk_cutoff=5, verbose=True)
+            center_bar = np.vstack((center_bar, center_bar_i))
+        # indexes zeroth element since it directly returns an array of shape (1, 3)
+        if bool_bh:
+            central_bh_i, _ = get_centralBH(run, halo, snap)
+            central_bh = np.vstack((central_bh, central_bh_i['position'][0]))
+
+        # Now all_image['x-y'], all_image['y-z'], image['x-z'], etc., hold the stacked data
+        verbose and print(f'\t\t planar shape of image array : {all_image["x-y"].shape}')
+        verbose and print(f'\tsnapshot {snap} : check.')
+
+    # Combine all dictionaries into one
+    data_to_save = all_image.copy()  # Start with all_planes
+
+    # removes the first row initiated by np.ones()
+    if bool_h0:
+        data_to_save['center_h0'] = center_h0[1:]
+    if bool_bar:
+        data_to_save['center_bar'] = center_bar[1:]
+    if bool_bh:
+        data_to_save['central_BH'] = central_bh[1:]
+
+    data_to_save['redshifts'] = redshifts  # timestamps
+    data_to_save['lookback_times'] = lookback_times
+    data_to_save['column_width'] = round(dims[1] / float(pixels), 3)  # in ckpc
+    data_to_save['column_depth'] = dims[0]  # in ckpc
+    data_to_save['image_size'] = dims[1]  # in ckpc
+    if halo != 'stream':
+        data_to_save['virial_radii'] = virial_radii
+
+    # Save data
+    output_base = '/z/rschisholm'
+    output_path = f'/halos/{run}/{halo}/images/{particle_type}/{param}/'
+    output_name = f'{run}.{halo}.{particle_type}.{param}.{dims[0]}x{dims[1]}kpc.npz'
+
+    try:
+        os.mkdir(output_base + output_path)
+        print('\toutput directory written')
+    except FileExistsError:
+        pass
+
+    np.savez_compressed(output_base + output_path + output_name, **data_to_save)
+    return output_path + output_name
+
+
+def main(cluster):
+    # input arguments and parser
+    parser = argparse.ArgumentParser(
+        description='Run image map script for a galaxy and snapshot range.'
+    )
+
+    # --- required positional args ---
+    positional_args = [
+        ('run', 'indicated simulation run, e.g. 09_18'),
+        ('halo', 'halo to be processed, e.g. halo_08'),
+        ('particle_type', 'particle type to be processed, e.g. gas, stars, dm, tout'),
+        ('parameter', 'parameter to be processed, e.g. massDen'),
+    ]
+
+    # --- optional args ---
+    optional_args = [
+        ('--length', dict(type=int, default=400, help='side length of image in kpc')),
+        ("--depth", dict(type=int, default=100, help='column depth of image in kpc')),
+        ("--pixels", dict(type=int, default=400, help='side length of image in pixels')),
+        ("--start", dict(type=int, default=97, help='starting snapshot')),
+        ("--end", dict(type=int, default=127, help='ending snapshot')),
+        ('--padding', dict(type=int, default=None, help='No padding?')),
+    ]
+
+    # --- boolean flags ---
+    bool_args = [
+        ("--h0", dict(dest='h0', action='store_true', help="loc of HI center?")),
+        ("--bar", dict(dest='bar', action='store_true', help="loc of bar?")),
+        ("--bh", dict(dest='bh', action='store_true', help="Central BH?")),
+        ('--sph', dict(dest='sph', action='store_true', help='sph kernel projection?')),
+        ('--v', dict(dest='verbose', action='store_true', help='verbose print statements')),
+    ]
+
+    for name, helptext in positional_args:
+        parser.add_argument(name, help=helptext)
+    for name, kwargs in optional_args:
+        parser.add_argument(name, **kwargs)
+    for name, kwargs in bool_args:
+        parser.add_argument(name, **kwargs)
+    parser.set_defaults(h0=False, bar=False, bh=False, sph=False, v=False)
+    args = parser.parse_args()
+
+    print('--------------------------------------------------------------------------------\n'
+          + f'en train de creer du graphique ...\n'
+          + f'sim_run -- {args.run}\n'
+          + f'halo -- {args.halo}\n'
+          + f'part_type -- {args.particle_type}\n'
+          + f'parameter -- {args.parameter}\n'
+          + f'depth, length, pixels -- {args.depth}, {args.length}, {args.pixels}\n'
+          + f'start, end snapshot -- {args.start}, {args.end}\n'
+          + (f'padding -- {args.padding}\n' if args.padding is not None else '')
+          + ('with sph-projection.\n' if args.sph else '')
+          + ('with HI (or cold) center.\n' if args.h0 else '')
+          + ('with bar.\n' if args.bar else '')
+          + ('with central bh.\n' if args.bh else '')
+          + 'verbose print statements -- ' + ('True\n' if args.verbose else 'False\n')
+          + '--------------------------------------------------------------------------------')
+
+    if cluster == 'erebos':
+        output_path = package_data(args.run, args.halo, (args.start, args.end), args.particle_type, args.parameter,
+                                   dims=(args.depth, args.length), pixels=args.pixels, padding=args.padding,
+                                   bool_h0=args.h0, bool_bar=args.bar, bool_bh=args.bh,
+                                   bool_sph=args.sph, verbose=args.verbose)
+    elif cluster == 'scylla':
+        output_path = package_data(args.run, args.halo, (args.start, args.end), args.particle_type, args.parameter,
+                                   dims=(args.depth, args.length), pixels=args.pixels, padding=args.padding,
+                                   bool_sph=args.sph, bool_bh=args.bh, verbose=args.verbose)
+    else:
+        print(f'Error: {cluster} is an invalid cluster given (e.g. erebos, scylla, etc...); '
+              f'line {inspect.currentframe().f_lineno}')
+        exit(1)
+
+    print(f'le dossier de sortie a ete ecrit, trouvez le chemin d\'access ci-dessous:\n\n{output_path}\n')
+
+
+def plotting():
+    from util.images import (dispatch_plot)
 
     # ------------------------------------
-elif machine == 'dear-prudence':
-    from scripts.archive import ursa
-    from scripts.local.archive.plots_old import plot_image, plot_frames
+    plot_type = 'frames'
+    # ------------------------------------
+    planes = ['x-y', 'x-z']
+    run = '09_18_lastgigyear'
+    halo = 'halo_08'  # chosen halo frame of reference, or 'stream' for MS-analog
+    particle_type = 'stars'
+    parameter = 'mbp'
+    dims = [5, 10]  # in c-kpc, 0-entry is smaller image dimension, 1-entry is larger image dimension04.0
+    # ------------------------------------
+    bool_centerPot = False
+    bool_centerH0 = False
+    bool_centerBar = False
+    bool_centralBH = False
+    # ------------------------------------
+    snapshot = 238
+    snapshots = [96, 108, 114, 119, 124, 127]
+    # ------------------------------------
 
-    bin_size = round(dims[1] / float(n_bins[0]), 2)
+    input_path = (f'/Users/ursa/dear-prudence/halos/{run}/{halo}/images/{particle_type}/{parameter}'
+                  f'/{run}.{halo}.{particle_type}.{parameter}.{dims[0]}x{dims[1]}kpc.npz')
 
-    if type_plot == 'image':
-        input_path = ('/Users/dear-prudence/Desktop/smorgasbord/images/' + halo + '/'
-                      + ('isolated/' if isolated_halo is True else '')
-                      + ('corona/' if Corona is True else '')
-                      + parameter + '/'
-                      + str(dims[0]) + 'x' + str(dims[1]) + '/09_18_gas_' + parameter + '_' + halo
-                      + '_' + str(dims[0]) + 'x' + str(dims[1])
-                      + 'ckpc_bin' + str(bin_size) + 'ckpc_0_1'
-                      + ('isolated' if isolated_halo is True else '')
-                      + ('isolatedcorona' if Corona is True else '')
-                      + '.npz')
-        output_path = ('/Users/dear-prudence/Desktop/smorgasbord/images/' + halo + '/'
-                       + ('isolated/' if isolated_halo is True else '')
-                       + ('corona/' if Corona is True else '')
-                       + parameter + '/'
-                       + str(dims[0]) + 'x' + str(dims[1]) + '/'
-                       '09_18_gas_' + parameter + '_' + halo + '_' + str(dims[0]) + 'x' + str(dims[1])
-                       + 'ckpc_0_1.png')
-        snaps = [83, 89, 110, 116, 121, 127]
-        # snap 95 (z = 0.506): "primordial LMC"
-        # snap 108 (z = 0.258): fully-formed, near-peak mass LMC
-        # snap 114 (z = 0.165): LMC peak mass, M_vir ~ 3.52e+11
-        # snap 119 (z = 0.099): after major ejection of gas
-        # snap 122 (z = 0.060): LMC passes R_vir of the MW
-        # snap 127 (z = 0.0): present-day (M_vir ~ 1.85e+11, M_gas ~ 1.26e+10)
+    if plot_type == 'cover':
+        output_path = f'/halos/{run}/{halo}/images/{particle_type}/{parameter}/'
+        dispatch_plot('imageMaps', plot_type, input_path, output_path, partType=particle_type,
+                      parameter=parameter,
+                      snapshot=snapshot)
 
-        plot_image(parameter, input_path, output_path, snaps=snaps, scale=[50, 400])
+    elif plot_type == 'frames':
+        output_path = (f'/Users/ursa/dear-prudence/halos/{run}/{halo}/images/{particle_type}/{parameter}/'
+                       f'{dims[0]}x{dims[1]}_frames/')
+        dispatch_plot('imageMaps', plot_type, input_path, output_path, partType=particle_type,
+                      bool_centerPot=bool_centerPot, bool_centerH0=bool_centerH0,
+                      bool_centerBar=bool_centerBar, bool_centralBH=bool_centralBH,
+                      run=run, parameter=parameter, planes=planes)
 
-    elif type_plot == 'frames':
-        if manual is True:
-            input_paths = ['/Users/dear-prudence/Desktop/smorgasbord/images/halo_08/stars/massDen/200x400_rot/'
-                           '09_18_stars_massDen_halo_08_200x400ckpc_bin0.5ckpc_0_1haloFrame.npz',
-                           '/Users/dear-prudence/Desktop/smorgasbord/images/halo_08/massDen/400x400_rot/'
-                           '09_18_gas_massDen_halo_08_400x400ckpc_bin0.5ckpc_0_1haloFrame.npz']
-            output_path = '/Users/ursa/Desktop/smorgasbord/images/halo_08/starsVgas/'
-        else:
-            input_paths = ['/Users/dear-prudence/Desktop/smorgasbord/images/' + halo + '/'
-                           + ('isolated/' if isolated_halo is True else '')
-                           + ('corona/' if Corona is True else '')
-                           + ('stars/' if Particle == 'stars' else '')
-                           + parameter + '/'
-                           + str(dims[0]) + 'x' + str(dims[1]) + '/09_18_' + Particle + '_' + parameter + '_' + halo
-                           + '_' + str(dims[0]) + 'x' + str(dims[1])
-                           + 'ckpc_bin' + str(bin_size) + 'ckpc_0_1'
-                           + ('isolated' if isolated_halo is True else '')
-                           + ('isolatedcorona' if Corona is True else '')
-                           + ('haloFrame' if frame_ == 'halo' else '')
-                           + '.npz',
-                           '/Users/dear-prudence/Desktop/smorgasbord/images/' + halo + '/'
-                           + ('isolated/' if isolated_halo is True else '')
-                           + ('corona/' if Corona is True else '')
-                           + ('stars/' if Particle == 'stars' else '')
-                           + parameter + '/'
-                           + str(dims[0]) + 'x' + str(dims[1]) + '/09_18_' + Particle + '_' + parameter + '_' + halo
-                           + '_' + str(dims[0]) + 'x' + str(dims[1])
-                           + 'ckpc_bin' + str(bin_size) + 'ckpc_2_1'
-                           + ('isolated' if isolated_halo is True else '')
-                           + ('isolatedcorona' if Corona is True else '')
-                           + ('haloFrame' if frame_ == 'halo' else '')
-                           + '.npz']
-            output_path = ('/Users/dear-prudence/Desktop/smorgasbord/images/' + halo + '/'
-                           + ('isolated/' if isolated_halo is True else '')
-                           + ('corona/' if Corona is True else '')
-                           + ('stars/' if Particle == 'stars' else '')
-                           + parameter + '/'
-                           + str(dims[0]) + 'x' + str(dims[1]) + '/')
+    elif plot_type == 'panels':
+        output_path = ('/Users/dear-prudence/smorgasbord/images/' + run + '_' + halo + '/' + particle_type + '/'
+                       + parameter + '/panels/')
+        dispatch_plot('imageMaps', plot_type, input_path, output_path, parameter=parameter,
+                      partType=particle_type, bool_centralBH=bool_centralBH,
+                      snapshots=snapshots)
 
-        plot_frames(parameter, input_paths, output_path, scale=dims)
+    elif plot_type == 'special':
+        output_path = f'/Users/ursa/dear-prudence/halos//{run}/{halo}/images/{particle_type}/{parameter}'
+        dispatch_plot('imageMaps', plot_type, input_path, output_path, parameter=parameter,
+                      partType=particle_type, bool_centralBH=bool_centralBH, snapshot=snapshot)
 
-    elif type_plot == 'combo_frames':
-        input_paths = ['/Users/dear-prudence/Desktop/smorgasbord/images/temperature/50x400ckpc/'
-                       '09_18_gas_temperature_LMC_50x400x400ckpc_bin1.0ckpc_2_1.npz',
-                       '/Users/dear-prudence/Desktop/smorgasbord/images/velMag/'
-                       '09_18_gas_velocityMag_lmc_50x400ckpc_bin1.0ckpc_2_1.npz']
-        output_path = '/Users/ursa/Desktop/smorgasbord/images/combination_temperature_velocity_50x400/'
+    elif plot_type == 'tempOffset':
+        output_path = f'/Users/ursa/dear-prudence/halos//{run}/{halo}/images/{particle_type}/{parameter}'
+        dispatch_plot('imageMaps', plot_type, input_path, output_path, parameter=parameter,
+                      partType=particle_type)
 
-        ursa.plot_combo_frames(['temperature', 'velocity'], input_paths, output_path, scale=[100, 800])
+    elif plot_type == 'chisholm2025':
+        from util.chisholm2025 import imageMap
+        # output_path = ('/Users/dear-prudence/smorgasbord/images/' + run + '_' + halo + '/' + particle_type + '/'
+        #                 + parameter + '/panels/')
+        imageMap()
 
-    print('Done!')
+    else:
+        exit(1)
+
+
+if __name__ == "__main__":
+    import socket
+
+    machine = socket.gethostname()
+
+    if 'aip.de' in machine:  # aip cluster
+        main('erebos')
+    elif machine == 'scylla':  # scylla cluster
+        main('scylla')
+    else:  # util machine
+        plotting()

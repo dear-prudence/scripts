@@ -1,7 +1,7 @@
 import sys
 import numpy as np
-from scripts.hestia import append_particles
-from scripts.hestia import calc_temperature
+from archive.hestia import append_particles
+from archive.hestia import calc_temperature
 
 
 def filter_unphysical_metallicities(data):
@@ -110,7 +110,7 @@ def retrieve_particles(snap_i, part_type):
 
 
 def package_data(snaps, particle):
-    from scripts.hestia import time_edges
+    from archive.hestia import time_edges
 
     part_to_type = {'gas': 'PartType0', 'dm': 'PartType1', 'stars': 'PartType4'}
     part_type = part_to_type[particle]

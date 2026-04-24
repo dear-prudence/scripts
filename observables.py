@@ -4,147 +4,11 @@ import os
 import inspect
 from pathlib import Path
 
-from numpy import sin, cos, arcsin, arctan2
-
-
-def wrap_ra(a): return np.mod(a, 2 * np.pi)
-
-
-def radec_to_unit(alpha, delta):
-    return np.array([
-        cos(delta) * cos(alpha),
-        cos(delta) * sin(alpha),
-        sin(delta)
-    ])
-    # return np.vstack((x, y, z)).T  # returns (N,3) array of unit vectors
-
-
-def unit_to_radec(vec):
-    x, y, z = vec[0], vec[1], vec[2]
-    r = np.sqrt(x ** 2 + y ** 2 + z ** 2)
-    x, y, z = x / r, y / r, z / r
-
-    alpha = arctan2(y, x)
-    delta = arcsin(z)
-
-    alpha = wrap_ra(alpha)
-    return alpha % (2 * np.pi), delta
-
-
-def rotationMatrix(alpha0, delta0):
-    """
-    Build rotation matrix R whose columns are the local basis vectors:
-      e_x' = local East direction
-      e_y' = local North direction
-      e_z' = direction to (alpha0, delta0)
-    R maps GLOBAL -> LOCAL frame.
-    """
-    # Local zenith (LMC center)
-    ez = np.array([
-        cos(delta0) * cos(alpha0),
-        cos(delta0) * sin(alpha0),
-        sin(delta0)
-    ])
-
-    # Local East (increasing alpha at constant delta)
-    ex = np.array([-np.sin(alpha0), np.cos(alpha0), 0.0])
-
-    # Local North = ez x ex
-    ey = np.cross(ez, ex)
-
-    # Normalize
-    ex /= np.linalg.norm(ex)
-    ey /= np.linalg.norm(ey)
-    ez /= np.linalg.norm(ez)
-
-    # Rotation matrix: GLOBAL -> LOCAL
-    R = np.column_stack((ex, ey, ez))
-    return R
-
-
-def radec_to_rhophi(alpha, delta, alpha0, delta0):
-    """
-    Convert (RA,Dec) to (rho,phi) with
-    phi = North of West as in van der Marel (2001).
-    """
-    R = rotationMatrix(alpha0, delta0)
-
-    v = radec_to_unit(alpha, delta)  # (N,3)
-    v_local = R.T @ v  # (E, N, Z)
-    E, N, Z = v_local[0], v_local[1], v_local[2]
-
-    rho = np.arccos(Z)
-    phi = -np.arctan2(N, -E)  # flip sign to fix handedness mismatch
-    return rho, phi, E, N, Z
-
-
-def rhophi_to_radec(rho, phi, alpha0, delta0):
-    """
-    Inverse transform for phi = North of West.
-    """
-    R = rotationMatrix(alpha0, delta0)
-
-    E = -np.sin(rho) * np.cos(phi)
-    N = -np.sin(rho) * np.sin(phi)
-    Z = np.cos(rho)
-
-    # v_local = np.vstack((E, N, Z))
-    v_local = np.array([
-        -sin(rho) * cos(phi),
-        -sin(rho) * sin(phi),
-        cos(rho)
-    ])
-    v_global = R @ v_local
-
-    alpha, delta = unit_to_radec(v_global)
-    return alpha, delta
-
-
-def Spherical(coords):
-    x, y, z = coords[0], coords[1], coords[2]
-    r = np.sqrt(x ** 2 + y ** 2 + z ** 2)
-    theta = np.arcsin(z / r)  # polar angle (up from xy-plane)
-    phi = np.arctan2(y, x)
-
-    return np.array([r, theta, phi])
-
-
-def Cartesian(coords):
-    r, theta, phi = coords[0], coords[1], coords[2]
-    x = r * cos(theta) * cos(phi)
-    y = r * cos(theta) * sin(phi)
-    z = r * sin(theta)
-
-    return np.array([x, y, z])
-
-
-def rho_phi(pos):
-    from hestia.astrometry import Measurements
-    m = Measurements()
-    d_lmc = m[f'LMC/disk/distance']
-    r = np.sqrt(pos[0] ** 2 + pos[1] ** 2 + (d_lmc - pos[2]) ** 2)
-    rho = np.arccos((d_lmc - pos[2]) / r)
-    phi = np.arctan2(pos[1], pos[0])
-
-    return np.array([r, rho, phi])
-
-
-def spherical(position):
-    if position.ndim == 1:
-        r = np.sqrt(position[0] ** 2 + position[1] ** 2 + position[2] ** 2)
-        theta = 90 - np.degrees(np.arccos(position[2] / r))  # polar angle
-        phi = np.degrees(np.arctan2(position[1], position[0]))  # azimuthal angle
-    else:
-        r = np.sqrt(position[:, 0] ** 2 + position[:, 1] ** 2 + position[:, 2] ** 2)
-        theta = 90 - np.degrees(np.arccos(position[:, 2] / r))  # polar angle
-        phi = np.degrees(np.arctan2(position[:, 1], position[:, 0]))  # azimuthal angle
-    return r, theta, phi
-
 
 def calcCenter(run, halo, snap, part_type, maxTemp=1e5, maxDist=4):
-    from hestia.particles import retrieve_particles
-    from hestia.gas import calc_temperature
-    from hestia.geometry import calc_distanceDisk
+    from archive.hestia import retrieve_particles
+    from archive.hestia import calc_temperature
+    from archive.hestia.geometry import calc_distanceDisk
 
     particles = retrieve_particles(run, halo, snap, part_type=part_type, verbose=False)
     if part_type == 'PartType0':
@@ -169,11 +33,11 @@ def calcCenter(run, halo, snap, part_type, maxTemp=1e5, maxDist=4):
 
 
 def construct_NH0(run, subject, snap, frame, pixels, verbose=True):
-    from hestia.geometry import get_redshift, transform_haloFrame
-    from hestia.astrometry import vrai_frame
-    from hestia.particles import retrieve_particles
-    from hestia.halos import get_halo_params
-    from hestia.image import sph_columnH0_projection
+    from archive.hestia.geometry import get_redshift, transform_haloFrame
+    from archive.hestia import vrai_frame
+    from archive.hestia import retrieve_particles
+    from archive.hestia import get_halo_params
+    from archive.hestia import sph_columnH0_projection
 
     # -------------------------------------
     database = 'stars'  # to define the center of the LMC; stellar velocity field
@@ -266,9 +130,9 @@ def construct_NH0(run, subject, snap, frame, pixels, verbose=True):
 
 
 def construct_PDF(run, subject, snapshot, sigma_snap, frame, pixels=400, verbose=True):
-    from hestia.geometry import get_redshift, get_lookbackTimes, calc_distanceDisk
-    from hestia.astrometry import vrai_frame, Measurements
-    from hestia.particles import retrieve_particles, get_softeningLength
+    from archive.hestia.geometry import get_redshift, get_lookbackTimes, calc_distanceDisk
+    from archive.hestia import vrai_frame, Measurements
+    from archive.hestia import retrieve_particles, get_softeningLength
     from scipy.interpolate import interp1d
     from scipy.ndimage import gaussian_filter
 
@@ -279,7 +143,7 @@ def construct_PDF(run, subject, snapshot, sigma_snap, frame, pixels=400, verbose
     interp_samples = 2000  # number of time stamps for interpolated trajectory
     tracer = 'disk'  # component of LMC to obtain (ra, dec, i, theta, d) from; 'disk' for Karachov+2024
     # -------------------------------------
-    bool_MCsample = True  # Monte Carlo sample uncertainty space ? (computationally expensive)
+    bool_MCsample = False  # Monte Carlo sample uncertainty space ? (computationally expensive)
     MC_samples = 100  # number of Monte Carlo samples
     # -------------------------------------
 
@@ -289,7 +153,7 @@ def construct_PDF(run, subject, snapshot, sigma_snap, frame, pixels=400, verbose
 
     if subject == 'halo_08':  # if the LMC-SMC analog system
         if reDerive_lmcSnapshot:
-            from hestia.astrometry import compute_LMCanalog_snapshot
+            from archive.hestia import compute_LMCanalog_snapshot
             prospective_snapshots = [220, 307]
             verbose and print(f'\tcomputing appropriate snapshot for {frame} LMC frame')
             snapshot = compute_LMCanalog_snapshot(prospective_snapshots)
@@ -533,7 +397,7 @@ def main(cluster):
 
 
 def plotting():
-    from local.plots import dispatch_plot
+    from util.plots import dispatch_plot
 
     # PARAMETERS TO CHANGE
     # ------------------------------------
@@ -555,11 +419,11 @@ def plotting():
     basePath = home / project_root / 'halos' / run / subject / 'observables' / parameter
 
     if chisholm2025_plot:
-        from local.chisholm2025 import streamPlot
+        from util.publications import streamPlot
         streamPlot()
     elif chisholm2026_plot:
-        from local.chisholm2026 import figure2
-        figure2()
+        from util.chisholm2026 import figure2b
+        figure2b()
 
     elif parameter == 'NH0':
         dispatch_plot('observables', f'{parameter}', frame=frame,
@@ -590,5 +454,5 @@ if __name__ == "__main__":
         main('erebos')
     elif machine == 'scylla':  # scylla cluster
         main('scylla')
-    else:  # local machine
+    else:  # util machine
         plotting()

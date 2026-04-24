@@ -1,11 +1,11 @@
 import sys
 import numpy as np
-from scripts.hestia import append_particles
-from scripts.hestia import filter_particles
-from scripts.hestia import cosmo_transform
-from scripts.hestia import time_edges
-from scripts.hestia import center_lmc
-from scripts.hestia import get_halo_params
+from archive.hestia import append_particles
+from archive.hestia import filter_particles
+from archive.hestia import cosmo_transform
+from archive.hestia import time_edges
+from archive.hestia import center_lmc
+from archive.hestia import get_halo_params
 
 
 def create_weighted_histogram(x, y, velocities, bins):

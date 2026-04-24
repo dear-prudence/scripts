@@ -1,5 +1,5 @@
 import numpy as np
-from scripts.hestia import time_edges
+from archive.hestia import time_edges
 
 
 def rid_sub_pixel(r, g, s):
@@ -79,7 +79,7 @@ halo = 'lmc'
 # ---------------------------------------------
 
 if mode == 'geras':
-    from scripts.hestia import get_radial_profile
+    from archive.hestia import get_radial_profile
 
     if isinstance(snaps, int):
         rad_profile = get_radial_profile(halo, run, snaps)

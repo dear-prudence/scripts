@@ -1,6 +1,6 @@
 import numpy as np
-from scripts.hestia import time_edges
-from scripts.hestia import get_rotation_curve
+from archive.hestia import time_edges
+from archive.hestia import get_rotation_curve
 
 
 def rid_sub_pixel(r, v):

@@ -5,7 +5,7 @@ import os
 
 
 def rotCurve(run, halo, snap):
-    from hestia.halos import get_massProfile
+    from archive.hestia import get_massProfile
 
     output_path = f'/halos/{run}/{halo}/kinematics/rotCurve/'
     output_fileName = f'{run}.{halo}.rotCurve.snap{snap}.npz'
@@ -21,9 +21,9 @@ def rotCurve(run, halo, snap):
 
 
 def accretionHistory(run, halo, verbose=False):
-    from hestia.halos import halo_dictionary
-    from hestia.particles import retrieve_particles
-    from hestia.geometry import get_redshift, get_lookbackTimes, calc_distanceDisk
+    from archive.hestia import halo_dictionary
+    from archive.hestia import retrieve_particles
+    from archive.hestia.geometry import get_redshift, get_lookbackTimes, calc_distanceDisk
     h = 0.677
 
     output_path = f'/halos/{run}/{halo}/kinematics/history/'
@@ -50,7 +50,7 @@ def accretionHistory(run, halo, verbose=False):
             bh['Distances'] = calc_distanceDisk(bh)
             dist_mask = bh['Distances'] < 10  # kpc
             bh = {key: val[dist_mask] for key, val in bh.items()}
-            verbose and print(f'\rretrieved central bh of {halo}, M ~ {(1e10 * bh["Masses"].item()):.2e};')
+            verbose and print(f'\rretrieved central bh of {halo}, M ~ {(bh["Masses"].item()):.2e};')
         else:
             verbose and print('\rNo central blackhole at this snapshot !')
             bh['Masses'] = np.ones(1)  # arbitrarily low value
@@ -61,7 +61,10 @@ def accretionHistory(run, halo, verbose=False):
             float(ahfHalo[row, 4] / h - ahfHalo[row, 45] / h - ahfHalo[row, 65] / h - bh['Masses']),  # M_dm
             float(ahfHalo[row, 45] / h),  # M_gas
             float(ahfHalo[row, 65] / h),  # M_star
-            float(bh['Masses'])  # M_bh
+            float(bh['Masses']),  # M_bh
+            float(bh['BH_Mass']) * 1e10 / h,  # M_bh (for diagnostics)
+            float(bh['BH_Density']) * h ** 2,  # averaged mass of surrounding gas, M_solar/ckpc^3
+            float(bh['BH_Mdot']) * 10.22  # d/dt(M_bh) [M_solar/yr],
         ])
 
         verbose and print(f'\tmass_vector at z ~ {redshift} : {mass[1:]} M_solar')
@@ -74,7 +77,8 @@ def accretionHistory(run, halo, verbose=False):
     output_dict = {'redshifts': massHistory[:, 0],
                    'lookback_times': get_lookbackTimes('', '', redshifts=massHistory[:, 0])[1],
                    'M_halo': massHistory[:, 1], 'M_dm': massHistory[:, 2], 'M_gas': massHistory[:, 3],
-                   'M_star': massHistory[:, 4], 'M_bh': massHistory[:, 5]}
+                   'M_star': massHistory[:, 4], 'M_bh': massHistory[:, 5],
+                   'M_BHgas': massHistory[:, 7], 'M_dot': massHistory[:, 8]}
 
     try:
         os.mkdir(f'/z/rschisholm{output_path}')
@@ -87,13 +91,17 @@ def accretionHistory(run, halo, verbose=False):
 
 
 def orbits(run, halo):
-    from hestia.geometry import get_lookbackTimes, calc_distanceHalo
+    from archive.hestia.geometry import get_lookbackTimes, calc_distanceHalo
     from scipy.interpolate import interp1d
 
-    snaps = [107, 127]
+    if run != '09_18_lastgigyear':
+        snaps = [107, 127]
+    else:
+        snaps = [118, 307]
     output_path = f'/halos/{run}/{halo}/kinematics/orbits/'
 
-    auxHalo_dict = {'halo_08': 'smc',
+    auxHalo_dict = {'halo_08': 'halo_1476',
+                    'halo_38': 'halo_454',
                     'halo_41': 'halo_01'}
 
     _, lookback_times = get_lookbackTimes(run, range(snaps[1], snaps[0], -1))
@@ -171,9 +179,9 @@ def orbits(run, halo):
 # noinspection SpellCheckingInspection
 def bhSloshing(run, halo, snaps, verbose=True):
     # making the plot of the offset of the central bh for a galaxy (as a function of time); for SDSS-V LVM project
-    from hestia.geometry import get_redshift, get_lookbackTimes
-    from hestia.halos import get_centralBH, get_halo_params
-    from hestia.particles import get_softeningLength, retrieve_particles
+    from archive.hestia.geometry import get_redshift, get_lookbackTimes
+    from archive.hestia import get_halo_params
+    from archive.hestia import get_softeningLength, retrieve_particles
 
     base_path = f'/halos/{run}/{halo}/kinematics/bhSloshing'
 
@@ -251,6 +259,123 @@ def bhSloshing(run, halo, snaps, verbose=True):
     return f'{base_path}/{output_file}'
 
 
+def mbpSloshing(run, halo, snaps, verbose=True):
+    # making the plot of the offset of the central bh for a galaxy (as a function of time); for SDSS-V LVM project
+    from archive.hestia.geometry import get_redshift, get_lookbackTimes
+    from archive.hestia import retrieve_particles
+    from archive.hestia import get_mbp
+
+    base_path = f'/halos/{run}/{halo}/kinematics/mbpSloshing'
+
+    mbp_t0 = 37
+    mbp_id = get_mbp('09_18', halo, [mbp_t0, 127], verbose=verbose)
+
+    for snap in range(snaps[1], snaps[0], -1):
+        redshift = float(get_redshift(run, snap))
+        a = 1 / (1 + redshift)
+        h = 0.677
+        verbose and print(f'\nen train de travailler au snapshot {snap}, z = {redshift} ...')
+
+        stars = retrieve_particles(run, halo, snap, 'PartType4', verbose=verbose)
+        mbp_mask = stars['ParticleIDs'] == mbp_id
+        mbp = {key: val[mbp_mask] for key, val in stars.items()}
+        verbose and print(f'\tretrieved mbp of {halo}, id ~ {int(mbp["ParticleIDs"])};')
+
+        norm = np.linalg.norm(mbp['position'])
+        print(f'mbp (x,y,z) : {mbp["position"][:, 0]}, {mbp["position"][:, 1]}, {mbp["position"][:, 2]}')
+
+        if snap == snaps[1]:  # if the first instance
+            redshifts = redshift
+            mbp_coords = mbp['position']  # in kpc
+            mbp_vels = mbp['velocity']  # km/s
+            mbp_norms = norm  # in kpc
+
+        else:  # if not the first instance
+            redshifts = np.append(redshifts, redshift)
+            mbp_coords = np.vstack((mbp_coords, mbp['position']))
+            mbp_vels = np.vstack((mbp_vels, mbp['velocity']))
+            mbp_norms = np.append(mbp_norms, norm)  # norms for 2-dim plot
+
+        verbose and print(f'termine avec le snapshot {snap}.')
+
+    _, lookback_times = get_lookbackTimes(run, snaps, redshifts=redshifts)
+
+    verbose and print(f'\nbh_norms : {mbp_norms}')
+    output_file = f'mbpSloshing.{run}.{halo}.mbp{mbp_t0}.npz'
+    np.savez_compressed(f'/z/rschisholm{base_path}/{output_file}',
+                        mbp_coords=mbp_coords, mbp_vels=mbp_vels, mbp_norms=mbp_norms,
+                        redshifts=redshifts, lookback_times=lookback_times)
+
+    return f'{base_path}/{output_file}'
+
+
+def bhAccretion(run, halo, verbose=False):
+    from archive.hestia import halo_dictionary
+    from archive.hestia import retrieve_particles
+    from archive.hestia.geometry import get_redshift, get_lookbackTimes, calc_distanceDisk
+    h = 0.677
+
+    output_path = f'/halos/{run}/{halo}/kinematics/bhAccretion/'
+    output_fileName = f'{run}.{halo}.bhAccretion.npz'
+
+    halo_id_z0 = halo_dictionary(run, halo)
+
+    if run != '09_18_lastgigyear':
+        ahf_filePath = (f'/store/clues/HESTIA/RE_SIMS/8192/GAL_FOR/{run}/AHF_output_2x2.5Mpc/'
+                        f'HESTIA_100Mpc_8192_{run}.127_halo_{halo_id_z0}.dat')
+        idx_i, idx_f = 67, 127
+    else:
+        ahf_filePath = f'/z/rschisholm/halos/{run}/{halo}/HESTIA_100Mpc_8192_{run}.127_halo_{halo_id_z0}.dat'
+        idx_i, idx_f = 118, 307
+
+    ahfHalo = np.loadtxt(ahf_filePath)
+
+    for snap in range(idx_f, idx_i, -1):
+        redshift = get_redshift(run, snap)
+        row = idx_f - snap
+
+        bh = retrieve_particles(run, halo, snap, 'PartType5', verbose=verbose)
+        if len(bh['ParticleIDs']) != 0:
+            bh['Distances'] = calc_distanceDisk(bh)
+            dist_mask = bh['Distances'] < 10  # kpc
+            bh = {key: val[dist_mask] for key, val in bh.items()}
+            verbose and print(f'\rretrieved central bh of {halo}, M ~ {(bh["Masses"].item()):.2e};')
+        else:
+            verbose and print('\rNo central blackhole at this snapshot !')
+            bh['Masses'] = np.ones(1)  # arbitrarily low value
+
+        accretion = np.array([
+            redshift,
+            float(ahfHalo[row, 4] / h),  # M_total (M_vir)
+            float(bh['Masses']),  # M_bh
+            float(bh['BH_Mass']) * 1e10 / h,  # M_bh (for diagnostics)
+            float(np.linalg.norm(bh['position'])),  # bh displacement in kpc
+            float(bh['BH_Density']) * h ** 2,  # averaged mass of surrounding gas, M_solar/ckpc^3
+            float(bh['BH_Mdot']) * 10.22  # d/dt(M_bh) [M_solar/yr],
+        ])
+
+        verbose and print(f'\tmass_vector at z ~ {redshift} : {accretion[1:]} M_solar')
+
+        if snap == idx_f:
+            history = accretion[np.newaxis, :]
+        else:
+            history = np.vstack((history, accretion))
+
+    output_dict = {'redshifts': history[:, 0],
+                   'lookback_times': get_lookbackTimes('', '', redshifts=history[:, 0])[1],
+                   'M_halo': history[:, 1], 'M_res': history[:, 2], 'M_bh': history[:, 3],
+                   'x_bh': history[:, 4], 'M_BHgas': history[:, 5], 'M_dot': history[:, 6]}
+
+    try:
+        os.mkdir(f'/z/rschisholm{output_path}')
+        print('\toutput directory written')
+    except FileExistsError:
+        pass
+
+    np.savez(f'/z/rschisholm{output_path}{output_fileName}', **output_dict)
+    return f'{output_path}{output_fileName}'
+
+
 def main(cluster):
     parser = argparse.ArgumentParser(description="Run simulation script for a galaxy and snapshot range.")
 
@@ -281,6 +406,10 @@ def main(cluster):
         output_path = orbits(args.run, args.halo)
     elif args.plot_type == 'bhSloshing':
         output_path = bhSloshing(args.run, args.halo, [args.start, args.end])
+    elif args.plot_type == 'mbpSloshing':
+        output_path = mbpSloshing(args.run, args.halo, [args.start, args.end], verbose=True)
+    elif args.plot_type == 'bhAccretion':
+        output_path = bhAccretion(args.run, args.halo, verbose=True)
     else:
         print(f'Error: {args.type_plot} is an invalid plot type!')
         exit(1)
@@ -289,28 +418,33 @@ def main(cluster):
 
 
 def plotting():
-    from local.plots import dispatch_plot
+    from util.plots import dispatch_plot
     # ------------------------------------------------
-    type_plot = 'bhSloshing'
+    type_plot = 'orbits'
+    # ------------------------------------------------
     run = '09_18_lastgigyear'
-    halo = 'halo_41'
+    halo = 'halo_08'
     smoothing = True  # apply scipy interpolation smoothing routine
-    chisholm2026_plot = True
+    chisholm2026_plot = False
 
     # rotation curves --------------------------------
-    snapshot = 127
+    snapshot = 125
 
     # orbits -----------------------------------------
-    subject_halo = 'halo_01'
+    subject_halo = 'halo_1476'
 
     # bh perturbation --------------------------------
-    projection = '3-dim'
+    projection = '2-dim'
     parameter = 'norm'  # 'norm' or 'energy'
+
+    # mbp sloshing --------------------------------
+    mbp_t0 = 125
+
     # ------------------------------------
 
     if chisholm2026_plot:
-        from local.chisholm2026 import figure1
-        figure1()
+        from util.chisholm2026 import figure1b
+        figure1b()
         exit(0)
 
     home = Path.home()
@@ -334,6 +468,14 @@ def plotting():
         dispatch_plot('kinematics', type_plot, projection=projection, smoothing=smoothing, parameter=parameter,
                       input_path=f'{basePath}/bhSloshing.{run}.{halo}.npz',
                       output_path=f'{basePath}/bhSloshing.{run}.{halo}.{projection}.{parameter}.png')
+    elif type_plot == 'mbpSloshing':
+        dispatch_plot('kinematics', type_plot, projection=projection, smoothing=smoothing, parameter=parameter,
+                      input_path=f'{basePath}/mbpSloshing.{run}.{halo}.mbp{mbp_t0}.npz',
+                      output_path=f'{basePath}/mbpSloshing.{run}.{halo}.mbp{mbp_t0}.pdf')
+    elif type_plot == 'bhAccretion':
+        dispatch_plot('kinematics', type_plot,
+                      input_path=f'{basePath}/{run}.{halo}.bhAccretion.npz',
+                      output_path=f'{basePath}/{run}.{halo}.bhAccretion.pdf')
 
 
 if __name__ == "__main__":
@@ -345,5 +487,5 @@ if __name__ == "__main__":
         main('erebos')
     elif machine == 'scylla':  # scylla cluster
         main('scylla')
-    else:  # local machine
+    else:  # util machine
         plotting()

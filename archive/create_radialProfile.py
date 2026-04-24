@@ -1,6 +1,6 @@
 import numpy as np
-from scripts.hestia import time_edges
-from scripts.hestia import get_radial_profile
+from archive.hestia import time_edges
+from archive.hestia import get_radial_profile
 
 
 def rid_sub_pixel(r, g, s):

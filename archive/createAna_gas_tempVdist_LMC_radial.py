@@ -1,8 +1,8 @@
 import sys
-from scripts.hestia import calc_temperature
-from scripts.hestia import center_lmc
-from scripts.hestia import time_edges
-from scripts.hestia import distance_to_disk
+from archive.hestia import calc_temperature
+from archive.hestia import center_lmc
+from archive.hestia import time_edges
+from archive.hestia import distance_to_disk
 
 def add_temperature(data):
     temp_column = calc_temperature(u=np.array(data['InternalEnergy']), e_abundance=np.array(data['ElectronAbundance']),

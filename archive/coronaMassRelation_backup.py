@@ -9,7 +9,7 @@ def snap_to_redshift(snap):
 
 
 def add_temperature(particles):
-    from scripts.hestia import calc_temperature
+    from archive.hestia import calc_temperature
 
     temp_column = calc_temperature(u=np.array(particles['InternalEnergy']), e_abundance=np.array(particles['ElectronAbundance']),
                                    x_h=np.array(particles['GFM_Metals'][:, 0]))
@@ -100,9 +100,9 @@ def filter_particles_by_param(data, parameter, inq, threshold, usage=False):
 
 
 def temperature_profile(snap, redshift_, sim_run, halo_id, r_vir, M_vir):
-    from scripts.hestia import rid_h_units, transform_haloFrame
-    from scripts.hestia import center_halo
-    from scripts.hestia import append_particles, filter_particles
+    from archive.hestia import rid_h_units, transform_haloFrame
+    from archive.hestia import center_halo
+    from archive.hestia import append_particles, filter_particles
     import h5py
 
     snap_ = '0' + str(snap) if snap < 100 else str(snap)

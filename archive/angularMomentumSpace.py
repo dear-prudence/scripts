@@ -1,5 +1,5 @@
 import numpy as np
-from scripts.hestia import cosmo_transform
+from archive.hestia import cosmo_transform
 
 
 def stream_filtering(particles):
@@ -31,10 +31,10 @@ def stream_filtering(particles):
 
 
 def retrieve_particles(snap_i, z, run, halo, part_type, size, follow_gal=None, frame=None):
-    from scripts.hestia import transform_haloFrame
-    from scripts.hestia import center_halo
-    from scripts.hestia import append_particles, filter_particles
-    from scripts.hestia import halo_dictionary
+    from archive.hestia import transform_haloFrame
+    from archive.hestia import center_halo
+    from archive.hestia import append_particles, filter_particles
+    from archive.hestia import halo_dictionary
 
     if snap_i < 100:
         snap = '0' + str(snap_i)
@@ -96,7 +96,7 @@ def make_snap(particles, bins, n_dims, axis, extent):
 
 
 def package_data(sim_run, halo, particle, snaps, dims, n_bins, extent, isolate_stream):
-    from scripts.hestia import time_edges
+    from archive.hestia import time_edges
 
     part_to_type = {'gas': 'PartType0', 'dm': 'PartType1', 'stars': 'PartType4'}
     part_type = part_to_type[particle]
